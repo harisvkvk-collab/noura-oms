@@ -112,10 +112,16 @@ export async function openShippingSlip(orderId: string): Promise<void> {
 <head>
 <meta charset="utf-8" />
 <title>Shipping slip — ${escapeHtml(order.order_number)}</title>
-<style id="page-size-style">@page { size: A5; margin: 10mm; }</style>
+<style id="page-size-style">@page { size: A5; margin: 5mm; }</style>
 <style>
   * { box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; padding: 16px; font-size: 12px; }
+  html { margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; padding: 5mm; font-size: 12px; }
+  @media print {
+    html { margin: 0; padding: 0; }
+    body { margin: 0 !important; padding: 5mm !important; }
+    .controls { display: none !important; }
+  }
   .controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .controls button { font-size: 12px; padding: 4px 10px; border: 1px solid #999; background: #f5f5f5; cursor: pointer; border-radius: 4px; }
   .controls button.active { background: #333; color: #fff; border-color: #333; }
@@ -131,25 +137,28 @@ export async function openShippingSlip(orderId: string): Promise<void> {
   table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
   th, td { text-align: left; padding: 4px 0; border-bottom: 1px solid #ddd; }
   th:last-child, td:last-child { text-align: right; }
-  .payment { border: 1px solid #111; padding: 8px; margin-bottom: 12px; }
+  .qr-section { margin: 8px 0; }
+  .qr-section img { display: block; margin: 0 auto; }
+  .payment { border: 1px solid #111; padding: 8px; margin-top: 8px; margin-bottom: 8px; }
   .payment .big { font-size: 16px; font-weight: 700; margin-top: 4px; }
   .payment.cod .big { color: #b00020; }
 
   /* Compact layout (for 4x6 thermal labels) */
-  body.compact { font-size: 10px; padding: 8px; }
+  body.compact { font-size: 10px; padding: 3mm; }
+  body.compact .header { padding-bottom: 4px; margin-bottom: 6px; }
   body.compact .header .business-name { font-size: 14px; }
   body.compact .header .slip-title { font-size: 9px; }
-  body.compact .courier-banner { font-size: 16px; padding: 4px; margin-bottom: 8px; }
-  body.compact .meta-row { margin-bottom: 8px; font-size: 10px; }
-  body.compact .section { margin-bottom: 8px; }
-  body.compact .section .label { font-size: 9px; }
-  body.compact table { margin-bottom: 8px; font-size: 10px; }
+  body.compact .courier-banner { font-size: 16px; padding: 3px; margin-bottom: 6px; }
+  body.compact .meta-row { margin-bottom: 6px; font-size: 10px; }
+  body.compact .section { margin-bottom: 6px; }
+  body.compact .section .label { font-size: 9px; margin-bottom: 1px; }
+  body.compact table { margin-bottom: 6px; font-size: 10px; }
   body.compact th, body.compact td { padding: 2px 0; }
-  body.compact .payment { padding: 6px; margin-bottom: 8px; }
-  body.compact .payment .big { font-size: 14px; }
-  body.compact .qr-section { width: 60px; height: 60px; margin: 4px auto; }
-  body.compact .qr-section img { width: 60px; height: 60px; }
-  body.compact .qr-section .qr-label { font-size: 8px; }
+  body.compact .qr-section { margin: 4px 0; text-align: center; }
+  body.compact .qr-section img { width: 50px; height: 50px; margin: 2px auto; }
+  body.compact .qr-section .qr-label { font-size: 8px; margin-top: 2px; }
+  body.compact .payment { padding: 5px; margin: 6px 0; }
+  body.compact .payment .big { font-size: 14px; margin-top: 2px; }
   body.compact .remarks { display: none; }
 </style>
 </head>
