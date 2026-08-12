@@ -5,7 +5,7 @@
 // timestamped order_timeline row for the logged-in staff member.
 
 import { useEffect, useState } from 'react';
-import { ArrowLeft, CheckCircle2, Circle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Circle, FileText, Eye, X } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { embeddedName, firstEmbedded } from '@/lib/supabaseRelations';
 import { PAYMENT_METHOD_LABELS } from '@/lib/orderConstants';
@@ -51,6 +51,7 @@ type Order = {
   customer_name: string | null;
   customer_phone: string | null;
   delivery_area: string | null;
+  notes: string | null;
   deliveryAddress: {
     full_address: string | null;
     city: string | null;
@@ -58,6 +59,12 @@ type Order = {
     zip_code: string | null;
     google_location_link: string | null;
   } | null;
+};
+
+type OrderPhoto = {
+  id: string;
+  image_url: string;
+  uploaded_at: string;
 };
 
 type ShipmentLeg = {
@@ -78,7 +85,7 @@ type ShipmentLeg = {
   } | null;
 };
 
-type OrderItemRow = { id: string; product_id: string | null; item_name: string; qty: number };
+type OrderItemRow = { id: string; product_id: string | null; item_name: string; qty: number; unit_price?: number };
 
 type TimelineEntry = { step: string; created_at: string; staff_name: string | null };
 
@@ -90,15 +97,15 @@ function formatTimestamp(iso: string) {
 }
 
 async function fetchOrderDetail(orderId: string) {
-  const [orderRes, itemsRes, timelineRes, shipmentRes] = await Promise.all([
+  const [orderRes, itemsRes, timelineRes, shipmentRes, photosRes] = await Promise.all([
     supabase
       .from('orders')
       .select(
-        'id, order_number, status, total, total_in_aed, currency_code, order_source, payment_method, fulfillment_type, delivery_country_code, delivery_area, customer_id, customers(name, phone)',
+        'id, order_number, status, total, total_in_aed, currency_code, order_source, payment_method, fulfillment_type, delivery_country_code, delivery_area, notes, customer_id, customers(name, phone)',
       )
       .eq('id', orderId)
       .single(),
-    supabase.from('order_items').select('id, product_id, item_name, qty').eq('order_id', orderId),
+    supabase.from('order_items').select('id, product_id, item_name, qty, unit_price').eq('order_id', orderId),
     supabase
       .from('order_timeline')
       .select('step, created_at, staff_users(name)')
@@ -110,6 +117,7 @@ async function fetchOrderDetail(orderId: string) {
       .eq('order_id', orderId)
       .is('return_id', null)
       .maybeSingle(),
+    supabase.from('order_photos').select('id, image_url, uploaded_at').eq('order_id', orderId).order('uploaded_at', { ascending: false }),
   ]);
 
   // Fetch full pickup location and delivery address details
@@ -143,6 +151,7 @@ async function fetchOrderDetail(orderId: string) {
   if (orderRes.error) throw orderRes.error;
   if (itemsRes.error) throw itemsRes.error;
   if (timelineRes.error) throw timelineRes.error;
+  if (photosRes.error) throw photosRes.error;
 
   const o = orderRes.data;
   const customer = firstEmbedded(o.customers);
@@ -160,6 +169,7 @@ async function fetchOrderDetail(orderId: string) {
     customer_name: customer?.name ?? null,
     customer_phone: customer?.phone ?? null,
     delivery_area: o.delivery_area,
+    notes: o.notes,
     deliveryAddress: deliveryAddressData ? {
       full_address: deliveryAddressData.full_address,
       city: deliveryAddressData.city,
@@ -174,6 +184,13 @@ async function fetchOrderDetail(orderId: string) {
     product_id: i.product_id,
     item_name: i.item_name,
     qty: i.qty,
+    unit_price: i.unit_price ? Number(i.unit_price) : undefined,
+  }));
+
+  const photos: OrderPhoto[] = (photosRes.data ?? []).map((p) => ({
+    id: p.id,
+    image_url: p.image_url,
+    uploaded_at: p.uploaded_at,
   }));
 
   const timeline: TimelineEntry[] = (timelineRes.data ?? []).map((t) => ({
@@ -206,7 +223,7 @@ async function fetchOrderDetail(orderId: string) {
       }
     : null;
 
-  return { order, items, timeline, courierName, shipmentLeg };
+  return { order, items, timeline, courierName, shipmentLeg, photos };
 }
 
 function openPdfFromBase64(base64Data: string, contentType?: string) {
@@ -313,6 +330,7 @@ export function OrderDetail({
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [courierName, setCourierName] = useState<string | null>(null);
   const [shipmentLeg, setShipmentLeg] = useState<ShipmentLeg | null>(null);
+  const [photos, setPhotos] = useState<OrderPhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submittingStep, setSubmittingStep] = useState<string | null>(null);
@@ -325,6 +343,8 @@ export function OrderDetail({
   const [cancelling, setCancelling] = useState(false);
   const [sendingCourierWhatsApp, setSendingCourierWhatsApp] = useState(false);
   const [sendingCustomerWhatsApp, setSendingCustomerWhatsApp] = useState(false);
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [viewingPhotoUrl, setViewingPhotoUrl] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -335,6 +355,7 @@ export function OrderDetail({
       setTimeline(result.timeline);
       setCourierName(result.courierName);
       setShipmentLeg(result.shipmentLeg);
+      setPhotos(result.photos);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load order.');
@@ -679,6 +700,10 @@ export function OrderDetail({
             )}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={() => setDetailsModalOpen(true)}>
+              <FileText className="mr-1 size-4" />
+              Order details
+            </Button>
             <Button type="button" size="sm" variant="outline" disabled={printingSlip} onClick={handlePrintSlip}>
               {printingSlip ? 'Building…' : 'Print shipping slip'}
             </Button>
@@ -768,6 +793,151 @@ export function OrderDetail({
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={detailsModalOpen} onOpenChange={setDetailsModalOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Order Details — {order.order_number}</DialogTitle>
+            <button
+              onClick={() => setDetailsModalOpen(false)}
+              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
+              aria-label="Close"
+            >
+              <X className="size-5" />
+            </button>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-3">
+              <h3 className="font-semibold text-sm">Customer</h3>
+              <div className="space-y-1 text-sm">
+                <p><span className="text-muted-foreground">Name:</span> {order.customer_name || 'N/A'}</p>
+                <p><span className="text-muted-foreground">Phone:</span> {order.customer_phone || 'N/A'}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <h3 className="font-semibold text-sm">Delivery Address</h3>
+              <div className="space-y-1 text-sm">
+                {order.deliveryAddress?.full_address && (
+                  <p>{order.deliveryAddress.full_address}</p>
+                )}
+                {order.deliveryAddress?.area && (
+                  <p>{order.deliveryAddress.area}</p>
+                )}
+                {order.deliveryAddress?.city && (
+                  <p>{order.deliveryAddress.city}</p>
+                )}
+                {order.deliveryAddress?.zip_code && (
+                  <p>{order.deliveryAddress.zip_code}</p>
+                )}
+                {order.deliveryAddress?.google_location_link && (
+                  <p>
+                    <a
+                      href={order.deliveryAddress.google_location_link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:underline text-xs"
+                    >
+                      📍 Open in Google Maps
+                    </a>
+                  </p>
+                )}
+                {!order.deliveryAddress && <p className="text-muted-foreground">No delivery address set</p>}
+              </div>
+            </div>
+
+            {shipmentLeg && (
+              <div className="flex flex-col gap-3">
+                <h3 className="font-semibold text-sm">Courier Information</h3>
+                <div className="space-y-1 text-sm">
+                  <p><span className="text-muted-foreground">Courier:</span> {courierName || 'N/A'}</p>
+                  {shipmentLeg.tracking_number && (
+                    <p><span className="text-muted-foreground">Tracking:</span> {shipmentLeg.tracking_number}</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3">
+              <h3 className="font-semibold text-sm">Line Items</h3>
+              <div className="space-y-2 text-sm">
+                {items.length === 0 ? (
+                  <p className="text-muted-foreground">No items</p>
+                ) : (
+                  items.map((item) => (
+                    <div key={item.id} className="flex justify-between gap-2 border-b pb-2 last:border-b-0">
+                      <div>
+                        <p className="font-medium">{item.item_name}</p>
+                        <p className="text-xs text-muted-foreground">Qty: {item.qty}</p>
+                      </div>
+                      {item.unit_price && (
+                        <p className="text-right whitespace-nowrap">
+                          {order.currency_code} {item.unit_price.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {photos.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <h3 className="font-semibold text-sm">Reference Photos</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {photos.map((photo) => (
+                    <button
+                      key={photo.id}
+                      onClick={() => setViewingPhotoUrl(photo.image_url)}
+                      className="relative aspect-square overflow-hidden rounded border border-border hover:border-primary transition-colors bg-secondary"
+                      aria-label="View photo"
+                    >
+                      <img
+                        src={photo.image_url}
+                        alt="Order reference"
+                        className="size-full object-cover"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/30 transition-colors">
+                        <Eye className="size-4 text-white opacity-0 hover:opacity-100" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {order.notes && (
+              <div className="flex flex-col gap-3">
+                <h3 className="font-semibold text-sm">Order Notes</h3>
+                <p className="text-sm whitespace-pre-wrap text-muted-foreground">{order.notes}</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {viewingPhotoUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setViewingPhotoUrl(null)}
+        >
+          <div className="relative max-h-[90vh] max-w-4xl">
+            <button
+              onClick={() => setViewingPhotoUrl(null)}
+              className="absolute -top-8 right-0 text-white hover:text-gray-300"
+              aria-label="Close"
+            >
+              <X className="size-6" />
+            </button>
+            <img
+              src={viewingPhotoUrl}
+              alt="Full size photo"
+              className="max-h-[90vh] max-w-4xl object-contain"
+            />
+          </div>
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-4">
