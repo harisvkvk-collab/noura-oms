@@ -361,18 +361,23 @@ export function OrderDetail({
       const photosWithSignedUrls = await Promise.all(
         result.photos.map(async (photo) => {
           try {
-            // Assume image_url is a path like "orders/order-id/photo-id.jpg"
-            // Try to get a signed URL; if it fails, fall back to the original URL
-            const { data: signedUrlData } = await supabase.storage
+            // image_url is a path like "order-id/key-filename.jpg"
+            // createSignedUrl returns { data: { signedUrl: string }, error: null }
+            const { data, error } = await supabase.storage
               .from('order-photos')
               .createSignedUrl(photo.image_url, 3600);
 
+            if (error || !data) {
+              console.warn(`Failed to generate signed URL for ${photo.image_url}:`, error);
+              return { ...photo, signedUrl: photo.image_url };
+            }
+
             return {
               ...photo,
-              signedUrl: signedUrlData?.signedUrl || photo.image_url,
+              signedUrl: data.signedUrl,
             };
-          } catch {
-            // If signed URL generation fails, use the original URL as fallback
+          } catch (err) {
+            console.warn(`Error generating signed URL for ${photo.image_url}:`, err);
             return { ...photo, signedUrl: photo.image_url };
           }
         })
