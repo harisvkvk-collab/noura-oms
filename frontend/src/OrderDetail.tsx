@@ -831,8 +831,8 @@ export function OrderDetail({
       </Dialog>
 
       <Dialog open={detailsModalOpen} onOpenChange={setDetailsModalOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] overflow-y-auto max-w-2xl w-full">
+          <DialogHeader className="sticky top-0 bg-background z-10">
             <DialogTitle>Order Details — {order.order_number}</DialogTitle>
             <button
               onClick={() => setDetailsModalOpen(false)}
@@ -843,7 +843,7 @@ export function OrderDetail({
             </button>
           </DialogHeader>
 
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-6 pr-4">
             <div className="flex flex-col gap-3">
               <h3 className="font-semibold text-sm">Customer</h3>
               <div className="space-y-1 text-sm">
@@ -921,7 +921,7 @@ export function OrderDetail({
             {photos.length > 0 && (
               <div className="flex flex-col gap-3">
                 <h3 className="font-semibold text-sm">Reference Photos</h3>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                   {photos.map((photo) => (
                     <button
                       key={photo.id}
