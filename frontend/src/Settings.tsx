@@ -538,7 +538,6 @@ function WhatsAppMessagesPanel() {
         .maybeSingle();
       if (data?.whatsapp_customer_template) setCustomerTemplate(data.whatsapp_customer_template);
       if (data?.whatsapp_courier_template) setCourierTemplate(data.whatsapp_courier_template);
-      setLoading(false);
     }
     load();
   }, []);
