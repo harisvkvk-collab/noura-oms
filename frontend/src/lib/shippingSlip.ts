@@ -134,12 +134,13 @@ export async function openShippingSlip(orderId: string): Promise<void> {
   .meta-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px; }
   .section { margin-bottom: 6px; }
   .section .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; color: #555; margin-bottom: 1px; font-weight: 600; }
+  .section { font-size: 12px; line-height: 1.3; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
   th, td { text-align: left; padding: 2px 0; border-bottom: 1px solid #ddd; font-size: 11px; }
   th:last-child, td:last-child { text-align: right; }
-  .qr-section { margin: 4px 0; text-align: center; }
+  .qr-section { margin: 2px 0 4px 0; text-align: center; }
   .qr-section img { display: block; margin: 0 auto; }
-  .qr-section .qr-label { font-size: 9px; color: #666; margin-top: 2px; }
+  .qr-section .qr-label { font-size: 9px; color: #666; margin-top: 1px; }
   .payment { border: 1px solid #111; padding: 6px 4px; margin: 6px 0; }
   .payment .big { font-size: 15px; font-weight: 700; margin-top: 2px; }
   .payment.cod .big { color: #b00020; }
@@ -151,13 +152,13 @@ export async function openShippingSlip(orderId: string): Promise<void> {
   body.compact .header .slip-title { font-size: 8px; margin: 0.5px 0 0 0; }
   body.compact .courier-banner { font-size: 15px; padding: 2px 1px; margin-bottom: 4px; }
   body.compact .meta-row { margin-bottom: 4px; font-size: 9px; }
-  body.compact .section { margin-bottom: 4px; }
+  body.compact .section { margin-bottom: 4px; font-size: 10px; line-height: 1.2; }
   body.compact .section .label { font-size: 8px; margin-bottom: 0.5px; }
   body.compact table { margin-bottom: 4px; font-size: 9px; }
   body.compact th, body.compact td { padding: 1px 0; }
-  body.compact .qr-section { margin: 3px 0; text-align: center; }
+  body.compact .qr-section { margin: 1px 0 3px 0; text-align: center; }
   body.compact .qr-section img { width: 45px; height: 45px; margin: 1px auto; }
-  body.compact .qr-section .qr-label { font-size: 7px; margin-top: 1px; }
+  body.compact .qr-section .qr-label { font-size: 7px; margin-top: 0.5px; }
   body.compact .payment { padding: 4px 3px; margin: 4px 0; }
   body.compact .payment .big { font-size: 13px; margin-top: 1px; }
   body.compact .remarks { display: none; }
