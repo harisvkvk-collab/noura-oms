@@ -129,7 +129,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className="flex-1 min-w-0 overflow-x-hidden p-4 md:p-6">{children}</main>
 
         <footer className="border-t border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground md:px-6">
           Developed By Haris

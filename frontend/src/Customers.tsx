@@ -106,7 +106,7 @@ export function Customers({ initialSelectedId }: { initialSelectedId?: string | 
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[440px_1fr]">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-1 lg:grid-cols-[440px_1fr] min-w-0">
         <Card className="min-w-0">
           <CardContent className="p-0">
             <div className="p-3">
