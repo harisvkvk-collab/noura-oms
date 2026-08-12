@@ -699,7 +699,7 @@ export function OrderDetail({
               </>
             )}
           </p>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-nowrap gap-2 overflow-x-auto pb-2 -mb-2 sm:flex-wrap sm:overflow-x-visible">
             <Button type="button" size="sm" variant="outline" onClick={() => setDetailsModalOpen(true)}>
               <FileText className="mr-1 size-4" />
               Order details
