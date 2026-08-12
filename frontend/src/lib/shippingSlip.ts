@@ -116,9 +116,10 @@ export async function openShippingSlip(orderId: string): Promise<void> {
 <style>
   * { box-sizing: border-box; }
   body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; padding: 16px; font-size: 12px; }
-  .controls { display: flex; gap: 8px; margin-bottom: 16px; }
+  .controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .controls button { font-size: 12px; padding: 4px 10px; border: 1px solid #999; background: #f5f5f5; cursor: pointer; border-radius: 4px; }
   .controls button.active { background: #333; color: #fff; border-color: #333; }
+  .controls .separator { width: 1px; background: #999; margin: 0 4px; }
   @media print { .controls { display: none; } }
   .header { border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
   .header .business-name { font-size: 18px; font-weight: 700; }
@@ -133,13 +134,33 @@ export async function openShippingSlip(orderId: string): Promise<void> {
   .payment { border: 1px solid #111; padding: 8px; margin-bottom: 12px; }
   .payment .big { font-size: 16px; font-weight: 700; margin-top: 4px; }
   .payment.cod .big { color: #b00020; }
+
+  /* Compact layout (for 4x6 thermal labels) */
+  body.compact { font-size: 10px; padding: 8px; }
+  body.compact .header .business-name { font-size: 14px; }
+  body.compact .header .slip-title { font-size: 9px; }
+  body.compact .courier-banner { font-size: 16px; padding: 4px; margin-bottom: 8px; }
+  body.compact .meta-row { margin-bottom: 8px; font-size: 10px; }
+  body.compact .section { margin-bottom: 8px; }
+  body.compact .section .label { font-size: 9px; }
+  body.compact table { margin-bottom: 8px; font-size: 10px; }
+  body.compact th, body.compact td { padding: 2px 0; }
+  body.compact .payment { padding: 6px; margin-bottom: 8px; }
+  body.compact .payment .big { font-size: 14px; }
+  body.compact .qr-section { width: 60px; height: 60px; margin: 4px auto; }
+  body.compact .qr-section img { width: 60px; height: 60px; }
+  body.compact .qr-section .qr-label { font-size: 8px; }
+  body.compact .remarks { display: none; }
 </style>
 </head>
 <body>
   <div class="controls">
+    <strong style="font-size: 12px; align-self: center;">Paper size:</strong>
     <button type="button" class="active" data-size="A5" onclick="setSlipSize('A5', this)">A5</button>
     <button type="button" data-size="A6" onclick="setSlipSize('A6', this)">A6</button>
-    <button type="button" onclick="window.print()">Print</button>
+    <button type="button" data-size="compact" onclick="setSlipSize('compact', this)">Compact (4×6″)</button>
+    <div class="separator"></div>
+    <button type="button" onclick="window.print()" style="background: #007bff; color: white; border-color: #007bff;">Print</button>
   </div>
 
   <div class="header">
@@ -179,9 +200,9 @@ export async function openShippingSlip(orderId: string): Promise<void> {
 
   ${
     qrCodeDataUrl
-      ? `<div class="section" style="text-align: center;">
+      ? `<div class="section qr-section" style="text-align: center;">
     <img src="${qrCodeDataUrl}" alt="Customer location QR code" style="width: 100px; height: 100px; margin: 8px auto;" />
-    <div style="font-size: 10px; color: #666; margin-top: 4px;">Scan for customer location</div>
+    <div class="qr-label" style="font-size: 10px; color: #666; margin-top: 4px;">Scan for customer location</div>
   </div>`
       : ''
   }
@@ -198,14 +219,21 @@ export async function openShippingSlip(orderId: string): Promise<void> {
     <div class="big">${isCod ? `COLLECT AED ${Number(order.total_in_aed).toFixed(2)}` : 'PREPAID — PAID'}</div>
   </div>
 
-  ${order.notes ? `<div class="section"><div class="label">Remarks</div><div>${escapeHtml(order.notes)}</div></div>` : ''}
+  ${order.notes ? `<div class="section remarks"><div class="label">Remarks</div><div>${escapeHtml(order.notes)}</div></div>` : ''}
 
   <script>
     function setSlipSize(size, btn) {
-      document.getElementById('page-size-style').textContent = '@page { size: ' + size + '; margin: 10mm; }';
+      var sizeMap = {
+        'A5': 'A5',
+        'A6': 'A6',
+        'compact': '101.6mm 152.4mm'
+      };
+      var pageSize = sizeMap[size] || 'A5';
+      document.getElementById('page-size-style').textContent = '@page { size: ' + pageSize + '; margin: 10mm; }';
       document.querySelectorAll('.controls button[data-size]').forEach(function (b) {
         b.classList.toggle('active', b === btn);
       });
+      document.body.classList.toggle('compact', size === 'compact');
     }
   </script>
 </body>
