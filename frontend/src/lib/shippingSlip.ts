@@ -116,49 +116,50 @@ export async function openShippingSlip(orderId: string): Promise<void> {
 <style>
   * { box-sizing: border-box; }
   html { margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; padding: 5mm; font-size: 12px; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; padding: 3mm; font-size: 11px; line-height: 1.2; }
   @media print {
     html { margin: 0; padding: 0; }
-    body { margin: 0 !important; padding: 5mm !important; }
+    body { margin: 0 !important; padding: 3mm !important; }
     .controls { display: none !important; }
   }
-  .controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .controls button { font-size: 12px; padding: 4px 10px; border: 1px solid #999; background: #f5f5f5; cursor: pointer; border-radius: 4px; }
+  .controls { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .controls button { font-size: 11px; padding: 3px 8px; border: 1px solid #999; background: #f5f5f5; cursor: pointer; border-radius: 3px; }
   .controls button.active { background: #333; color: #fff; border-color: #333; }
   .controls .separator { width: 1px; background: #999; margin: 0 4px; }
   @media print { .controls { display: none; } }
-  .header { border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
-  .header .business-name { font-size: 18px; font-weight: 700; }
-  .header .slip-title { font-size: 11px; letter-spacing: 1px; color: #555; margin-top: 2px; }
-  .courier-banner { font-size: 20px; font-weight: 800; text-transform: uppercase; text-align: center; border: 2px solid #111; padding: 6px; margin-bottom: 12px; letter-spacing: 0.5px; }
-  .meta-row { display: flex; justify-content: space-between; margin-bottom: 12px; }
-  .section { margin-bottom: 12px; }
-  .section .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #666; margin-bottom: 2px; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-  th, td { text-align: left; padding: 4px 0; border-bottom: 1px solid #ddd; }
+  .header { border-bottom: 1.5px solid #111; padding-bottom: 4px; margin-bottom: 6px; }
+  .header .business-name { font-size: 16px; font-weight: 700; margin: 0; }
+  .header .slip-title { font-size: 9px; letter-spacing: 0.5px; color: #555; margin: 1px 0 0 0; }
+  .courier-banner { font-size: 18px; font-weight: 800; text-transform: uppercase; text-align: center; border: 2px solid #111; padding: 4px 2px; margin-bottom: 6px; letter-spacing: 0.5px; }
+  .meta-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px; }
+  .section { margin-bottom: 6px; }
+  .section .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; color: #555; margin-bottom: 1px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+  th, td { text-align: left; padding: 2px 0; border-bottom: 1px solid #ddd; font-size: 11px; }
   th:last-child, td:last-child { text-align: right; }
-  .qr-section { margin: 8px 0; }
+  .qr-section { margin: 4px 0; text-align: center; }
   .qr-section img { display: block; margin: 0 auto; }
-  .payment { border: 1px solid #111; padding: 8px; margin-top: 8px; margin-bottom: 8px; }
-  .payment .big { font-size: 16px; font-weight: 700; margin-top: 4px; }
+  .qr-section .qr-label { font-size: 9px; color: #666; margin-top: 2px; }
+  .payment { border: 1px solid #111; padding: 6px 4px; margin: 6px 0; }
+  .payment .big { font-size: 15px; font-weight: 700; margin-top: 2px; }
   .payment.cod .big { color: #b00020; }
 
   /* Compact layout (for 4x6 thermal labels) */
-  body.compact { font-size: 10px; padding: 3mm; }
-  body.compact .header { padding-bottom: 4px; margin-bottom: 6px; }
-  body.compact .header .business-name { font-size: 14px; }
-  body.compact .header .slip-title { font-size: 9px; }
-  body.compact .courier-banner { font-size: 16px; padding: 3px; margin-bottom: 6px; }
-  body.compact .meta-row { margin-bottom: 6px; font-size: 10px; }
-  body.compact .section { margin-bottom: 6px; }
-  body.compact .section .label { font-size: 9px; margin-bottom: 1px; }
-  body.compact table { margin-bottom: 6px; font-size: 10px; }
-  body.compact th, body.compact td { padding: 2px 0; }
-  body.compact .qr-section { margin: 4px 0; text-align: center; }
-  body.compact .qr-section img { width: 50px; height: 50px; margin: 2px auto; }
-  body.compact .qr-section .qr-label { font-size: 8px; margin-top: 2px; }
-  body.compact .payment { padding: 5px; margin: 6px 0; }
-  body.compact .payment .big { font-size: 14px; margin-top: 2px; }
+  body.compact { font-size: 9px; padding: 2.5mm; line-height: 1.1; }
+  body.compact .header { padding-bottom: 2px; margin-bottom: 4px; }
+  body.compact .header .business-name { font-size: 13px; margin: 0; }
+  body.compact .header .slip-title { font-size: 8px; margin: 0.5px 0 0 0; }
+  body.compact .courier-banner { font-size: 15px; padding: 2px 1px; margin-bottom: 4px; }
+  body.compact .meta-row { margin-bottom: 4px; font-size: 9px; }
+  body.compact .section { margin-bottom: 4px; }
+  body.compact .section .label { font-size: 8px; margin-bottom: 0.5px; }
+  body.compact table { margin-bottom: 4px; font-size: 9px; }
+  body.compact th, body.compact td { padding: 1px 0; }
+  body.compact .qr-section { margin: 3px 0; text-align: center; }
+  body.compact .qr-section img { width: 45px; height: 45px; margin: 1px auto; }
+  body.compact .qr-section .qr-label { font-size: 7px; margin-top: 1px; }
+  body.compact .payment { padding: 4px 3px; margin: 4px 0; }
+  body.compact .payment .big { font-size: 13px; margin-top: 1px; }
   body.compact .remarks { display: none; }
 </style>
 </head>
