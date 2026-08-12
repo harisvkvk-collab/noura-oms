@@ -955,7 +955,7 @@ export function OrderDetail({
 
       {viewingPhotoUrl && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80"
           onClick={() => setViewingPhotoUrl(null)}
         >
           <div className="relative max-h-[90vh] max-w-4xl">
