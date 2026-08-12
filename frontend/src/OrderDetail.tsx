@@ -65,6 +65,7 @@ type OrderPhoto = {
   id: string;
   image_url: string;
   uploaded_at: string;
+  signedUrl?: string;
 };
 
 type ShipmentLeg = {
@@ -355,7 +356,29 @@ export function OrderDetail({
       setTimeline(result.timeline);
       setCourierName(result.courierName);
       setShipmentLeg(result.shipmentLeg);
-      setPhotos(result.photos);
+
+      // Generate signed URLs for photos in the private storage bucket
+      const photosWithSignedUrls = await Promise.all(
+        result.photos.map(async (photo) => {
+          try {
+            // Assume image_url is a path like "orders/order-id/photo-id.jpg"
+            // Try to get a signed URL; if it fails, fall back to the original URL
+            const { data: signedUrlData } = await supabase.storage
+              .from('order-photos')
+              .createSignedUrl(photo.image_url, 3600);
+
+            return {
+              ...photo,
+              signedUrl: signedUrlData?.signedUrl || photo.image_url,
+            };
+          } catch {
+            // If signed URL generation fails, use the original URL as fallback
+            return { ...photo, signedUrl: photo.image_url };
+          }
+        })
+      );
+
+      setPhotos(photosWithSignedUrls);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load order.');
@@ -889,12 +912,12 @@ export function OrderDetail({
                   {photos.map((photo) => (
                     <button
                       key={photo.id}
-                      onClick={() => setViewingPhotoUrl(photo.image_url)}
+                      onClick={() => setViewingPhotoUrl(photo.signedUrl || photo.image_url)}
                       className="relative aspect-square overflow-hidden rounded border border-border hover:border-primary transition-colors bg-secondary"
                       aria-label="View photo"
                     >
                       <img
-                        src={photo.image_url}
+                        src={photo.signedUrl || photo.image_url}
                         alt="Order reference"
                         className="size-full object-cover"
                       />
