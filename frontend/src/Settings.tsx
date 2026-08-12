@@ -526,7 +526,6 @@ function WhatsAppMessagesPanel() {
   const [courierTemplate, setCourierTemplate] = useState(
     'Order: {ORDER_NUMBER}\n\nFrom\n{PICKUP_ADDRESS}\n\nTo\n{CUSTOMER_NAME}\n{CUSTOMER_PHONE}\n{DELIVERY_ADDRESS}\n\nPayment\n{PAYMENT_TYPE}\n\nItems\n{ITEMS}',
   );
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
