@@ -361,8 +361,15 @@ export function OrderDetail({
       const photosWithSignedUrls = await Promise.all(
         result.photos.map(async (photo) => {
           try {
+            // Check if image_url is already a full URL (contains http/https)
+            if (photo.image_url.startsWith('http')) {
+              console.log('Photo URL is already a full URL:', photo.image_url);
+              return { ...photo, signedUrl: photo.image_url };
+            }
+
             // image_url is a path like "order-id/key-filename.jpg"
             // createSignedUrl returns { data: { signedUrl: string }, error: null }
+            console.log('Generating signed URL for path:', photo.image_url);
             const { data, error } = await supabase.storage
               .from('order-photos')
               .createSignedUrl(photo.image_url, 3600);
@@ -372,6 +379,7 @@ export function OrderDetail({
               return { ...photo, signedUrl: photo.image_url };
             }
 
+            console.log('Generated signed URL for:', photo.image_url);
             return {
               ...photo,
               signedUrl: data.signedUrl,
