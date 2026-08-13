@@ -15,11 +15,12 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Clean npm cache
-        run: cd frontend && rm -rf node_modules package-lock.json
-
-      - name: Install dependencies
-        run: cd frontend && npm install
+      - name: Clean npm cache and install
+        run: |
+          cd frontend
+          npm cache clean --force
+          rm -rf node_modules package-lock.json
+          npm install --no-optional
 
       - name: Build
         run: cd frontend && npm run build
