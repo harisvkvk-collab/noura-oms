@@ -172,6 +172,7 @@ export async function openShippingSlip(orderId: string): Promise<void> {
     <button type="button" data-size="compact" onclick="setSlipSize('compact', this)">Compact (4×6″)</button>
     <div class="separator"></div>
     <button type="button" onclick="window.print()" style="background: #007bff; color: white; border-color: #007bff;">Print</button>
+    <button type="button" onclick="window.close()" style="background: #dc3545; color: white; border-color: #dc3545;">Close</button>
   </div>
 
   <div class="header">
@@ -357,6 +358,7 @@ export async function openReturnSlip(returnId: string): Promise<void> {
     <button type="button" class="active" data-size="A5" onclick="setSlipSize('A5', this)">A5</button>
     <button type="button" data-size="A6" onclick="setSlipSize('A6', this)">A6</button>
     <button type="button" onclick="window.print()">Print</button>
+    <button type="button" onclick="window.close()" style="background: #dc3545; color: white; border-color: #dc3545;">Close</button>
   </div>
 
   <div class="header">
