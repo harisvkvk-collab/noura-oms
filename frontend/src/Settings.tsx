@@ -654,14 +654,23 @@ function EditCourierDialog({
 
     setSubmitting(true);
     try {
-      const { error: updateError } = await supabase
+      const { data, error: updateError } = await supabase
         .from('couriers')
         .update({
           whatsapp_number: whatsappNumber.trim(),
           contact_person: contactPerson.trim() || null,
         })
-        .eq('id', courier.id);
-      if (updateError) throw updateError;
+        .eq('id', courier.id)
+        .select();
+
+      if (updateError) {
+        console.error('Update error:', updateError);
+        throw updateError;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error('No rows were updated. Check Supabase RLS policies.');
+      }
 
       toast.success(`${courier.name} updated successfully.`);
       onSaved();
@@ -669,6 +678,7 @@ function EditCourierDialog({
       const message = getErrorMessage(err);
       setError(message);
       toast.error(`Failed to update courier: ${message}`);
+      console.error('Courier update error:', err);
     } finally {
       setSubmitting(false);
     }
