@@ -643,6 +643,13 @@ function EditCourierDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Reset form when courier changes
+  useEffect(() => {
+    setWhatsappNumber(courier.whatsapp_number || '');
+    setContactPerson(courier.contact_person || '');
+    setError(null);
+  }, [courier.id]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);

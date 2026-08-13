@@ -106,6 +106,14 @@ create policy "staff read" on exchange_rates   for select using (auth.role() = '
 create policy "staff read" on countries        for select using (auth.role() = 'authenticated');
 create policy "staff read" on product_categories for select using (auth.role() = 'authenticated');
 create policy "staff read" on couriers         for select using (auth.role() = 'authenticated');
+create policy "admin update couriers" on couriers
+  for update
+  using (
+    exists (select 1 from staff_users where id = auth.uid() and role = 'admin')
+  )
+  with check (
+    exists (select 1 from staff_users where id = auth.uid() and role = 'admin')
+  );
 create policy "staff read" on courier_zone_rates for select using (auth.role() = 'authenticated');
 create policy "staff read" on country_payment_methods for select using (auth.role() = 'authenticated');
 
