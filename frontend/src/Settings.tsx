@@ -191,21 +191,19 @@ function CourierApiKeysPanel() {
                           <span className="font-medium">{c.name}</span>
                           <Badge variant={saved ? 'success' : 'neutral'}>{saved ? 'Key saved' : 'No key set'}</Badge>
                         </button>
-                        {isManual && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="ml-2 h-auto p-1"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingCourier(c);
-                              setEditCourierDialogOpen(true);
-                            }}
-                          >
-                            Edit
-                          </Button>
-                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="ml-2 h-auto p-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingCourier(c);
+                            setEditCourierDialogOpen(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
                       </div>
                     );
                   })}
