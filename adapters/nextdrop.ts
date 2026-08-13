@@ -142,8 +142,15 @@ export class NextDropAdapter implements DeliveryAdapter {
    * than relying on the account's on-file branch.
    */
   async createShipment(input: CreateShipmentInput): Promise<CreateShipmentResult> {
+    // Use pickup location's city as the customer_branch if shipping from a non-default location,
+    // otherwise use the configured branch. This allows shipping from different NextDrop branches
+    // depending on which warehouse the order is being fulfilled from.
+    const customerBranch = input.shipFrom
+      ? titleCase(input.shipFrom.city)
+      : titleCase(this.config.customerBranch);
+
     const commonFields = {
-      customer_branch: titleCase(this.config.customerBranch),
+      customer_branch: customerBranch,
       to_customer: input.receiverName,
       to_address: flattenAddress(input.receiverAddress),
       to_city: titleCase(input.receiverCity),
