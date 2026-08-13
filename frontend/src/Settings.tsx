@@ -174,7 +174,6 @@ function CourierApiKeysPanel() {
                   {couriers.map((c) => {
                     const saved = hasCredentialRow(c.id);
                     const active = c.id === selectedCourierId;
-                    const isManual = c.integration_status === 'manual';
                     return (
                       <div
                         key={c.id}
@@ -375,7 +374,7 @@ function CredentialForm({
           <div key={idx} className="flex flex-col gap-1.5 sm:w-96">
             <div className="flex items-center gap-2">
               <Label htmlFor={`field-${idx}`}>{field.label}</Label>
-              <Badge variant={hasNewValue ? 'default' : isSaved ? 'success' : 'neutral'}>
+              <Badge variant={hasNewValue ? 'warning' : isSaved ? 'success' : 'neutral'}>
                 {hasNewValue ? 'New value' : isSaved ? '✓ Saved' : 'Not set'}
               </Badge>
             </div>
