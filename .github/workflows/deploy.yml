@@ -13,10 +13,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Install dependencies
-        run: cd frontend && npm install
+        run: cd frontend && npm cache clean --force && npm install --force
 
       - name: Build
         run: cd frontend && npm run build
