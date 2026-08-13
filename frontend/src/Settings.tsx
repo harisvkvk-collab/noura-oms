@@ -370,24 +370,35 @@ function CredentialForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4 border-t border-border pt-4">
-      {fields.map((field, idx) => (
-        <div key={idx} className="flex flex-col gap-1.5 sm:w-96">
-          <div className="flex items-center gap-2">
-            <Label htmlFor={`field-${idx}`}>{field.label}</Label>
-            <Badge variant={statusFor(field) ? 'success' : 'neutral'}>
-              {statusFor(field) ? 'Key set' : 'Not set'}
-            </Badge>
+      {fields.map((field, idx) => {
+        const isSaved = statusFor(field);
+        const hasNewValue = (values[idx] ?? '').trim().length > 0;
+        return (
+          <div key={idx} className="flex flex-col gap-1.5 sm:w-96">
+            <div className="flex items-center gap-2">
+              <Label htmlFor={`field-${idx}`}>{field.label}</Label>
+              <Badge variant={hasNewValue ? 'default' : isSaved ? 'success' : 'neutral'}>
+                {hasNewValue ? 'New value' : isSaved ? '✓ Saved' : 'Not set'}
+              </Badge>
+            </div>
+            <div className="relative">
+              <Input
+                id={`field-${idx}`}
+                type="password"
+                autoComplete="off"
+                placeholder={isSaved ? '••••••• (saved value)' : 'Enter value to save'}
+                value={values[idx] ?? ''}
+                onChange={(e) => setValues((v) => ({ ...v, [idx]: e.target.value }))}
+              />
+              {isSaved && !hasNewValue && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Value is saved. Enter new value above to update, or leave empty to keep unchanged.
+                </p>
+              )}
+            </div>
           </div>
-          <Input
-            id={`field-${idx}`}
-            type="password"
-            autoComplete="off"
-            placeholder="Leave blank to keep unchanged"
-            value={values[idx] ?? ''}
-            onChange={(e) => setValues((v) => ({ ...v, [idx]: e.target.value }))}
-          />
-        </div>
-      ))}
+        );
+      })}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
