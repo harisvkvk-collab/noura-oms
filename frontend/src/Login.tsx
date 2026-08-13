@@ -2,7 +2,7 @@
 // No signup form here on purpose: staff accounts are created by invite only
 // (see auth_setup.sql), so this screen only ever needs to handle sign-in.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,9 +12,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('noura-oms-remembered-email');
+    if (savedEmail) {
+      setEmail(savedEmail);
+      setRememberMe(true);
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,10 +35,14 @@ export function Login() {
     setLoading(false);
     if (error) {
       setError('Incorrect email or password.');
+      return;
     }
-    // On success, Supabase stores the session automatically and the
-    // onAuthStateChange listener in useSession() picks it up — no manual
-    // redirect needed here.
+
+    if (rememberMe) {
+      localStorage.setItem('noura-oms-remembered-email', email);
+    } else {
+      localStorage.removeItem('noura-oms-remembered-email');
+    }
   }
 
   if (showForgotPassword) {
@@ -70,6 +83,18 @@ export function Login() {
               >
                 Forgot password?
               </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="remember-me"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 rounded border border-input"
+              />
+              <Label htmlFor="remember-me" className="cursor-pointer text-sm font-normal">
+                Remember me
+              </Label>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" disabled={loading} className="w-full">
