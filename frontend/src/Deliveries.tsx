@@ -306,13 +306,13 @@ function CourierPayablesSection() {
       const { data, error: fetchError } = await supabase
         .from('courier_payables')
         .select('id, courier_id, amount, couriers(name), shipment_legs(manual_courier_name, orders(status))')
-        .neq('status', 'paid')
-        .eq('shipment_legs.orders.status', 'delivered');
+        .neq('status', 'paid');
       if (fetchError) throw fetchError;
       const rows = data ?? [];
-      const appliedMap = await fetchAppliedToPayables(rows.map((p) => p.id));
+      const deliveredRows = rows.filter((p) => firstEmbedded(p.shipment_legs)?.orders?.status === 'delivered');
+      const appliedMap = await fetchAppliedToPayables(deliveredRows.map((p) => p.id));
       setPayables(
-        rows.map((p) => {
+        deliveredRows.map((p) => {
           const manualCourierName = firstEmbedded(p.shipment_legs)?.manual_courier_name ?? null;
           const courierName = firstEmbedded(p.couriers)?.name ?? null;
           const amount = Number(p.amount);
