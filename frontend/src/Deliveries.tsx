@@ -305,8 +305,9 @@ function CourierPayablesSection() {
     try {
       const { data, error: fetchError } = await supabase
         .from('courier_payables')
-        .select('id, courier_id, amount, couriers(name), shipment_legs(manual_courier_name)')
-        .neq('status', 'paid');
+        .select('id, courier_id, amount, couriers(name), shipment_legs(manual_courier_name, orders(status))')
+        .neq('status', 'paid')
+        .eq('shipment_legs.orders.status', 'delivered');
       if (fetchError) throw fetchError;
       const rows = data ?? [];
       const appliedMap = await fetchAppliedToPayables(rows.map((p) => p.id));
