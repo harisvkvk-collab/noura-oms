@@ -305,11 +305,35 @@ function CourierPayablesSection() {
     try {
       const { data, error: fetchError } = await supabase
         .from('courier_payables')
-        .select('id, courier_id, amount, couriers(name), shipment_legs(manual_courier_name, orders(status))')
+        .select('id, courier_id, amount, couriers(name), shipment_legs(id, manual_courier_name, order_id)')
         .neq('status', 'paid');
       if (fetchError) throw fetchError;
       const rows = data ?? [];
-      const deliveredRows = rows.filter((p) => firstEmbedded(p.shipment_legs)?.orders?.status === 'delivered');
+
+      // Fetch order statuses for all shipment legs
+      const orderIds = new Set<string>();
+      for (const p of rows) {
+        const leg = firstEmbedded(p.shipment_legs);
+        if (leg?.order_id) orderIds.add(leg.order_id);
+      }
+
+      let orderStatuses = new Map<string, string>();
+      if (orderIds.size > 0) {
+        const { data: orders } = await supabase
+          .from('orders')
+          .select('id, status')
+          .in('id', Array.from(orderIds));
+        for (const order of orders ?? []) {
+          orderStatuses.set(order.id, order.status);
+        }
+      }
+
+      // Filter to only delivered orders
+      const deliveredRows = rows.filter((p) => {
+        const leg = firstEmbedded(p.shipment_legs);
+        return leg?.order_id && orderStatuses.get(leg.order_id) === 'delivered';
+      });
+
       const appliedMap = await fetchAppliedToPayables(deliveredRows.map((p) => p.id));
       setPayables(
         deliveredRows.map((p) => {
