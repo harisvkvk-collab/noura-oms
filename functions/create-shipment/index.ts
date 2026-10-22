@@ -14,6 +14,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { getAdapterForCourier } from '../_shared/getAdapterForCourier.ts';
+import { isAutoBookingEnabled } from '../_shared/courierBooking.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 import type { CreateShipmentInput } from '../../adapters/types.ts';
 
@@ -47,7 +48,7 @@ Deno.serve(async (req) => {
     const { data: leg, error: legError } = await supabase
       .from('shipment_legs')
       .select(
-        'id, shipment_id, courier_id, currency_code, pickup_location_id, couriers(name, api_provider, integration_status)',
+        'id, shipment_id, courier_id, currency_code, pickup_location_id, couriers(name, api_provider, integration_status, api_environment)',
       )
       .eq('id', shipmentLegId)
       .maybeSingle();
@@ -59,9 +60,10 @@ Deno.serve(async (req) => {
     // — see frontend/src/lib/supabaseRelations.ts) — take the first entry.
     const courier = Array.isArray(leg.couriers) ? leg.couriers[0] : leg.couriers;
     if (!courier) return json({ ok: false, error: 'Courier not found for this leg.' });
-    if (courier.integration_status !== 'integrated') {
+    if (!isAutoBookingEnabled(courier)) {
       return json({ ok: false, error: `${courier.name} is not an integrated courier.` });
     }
+    const isDelhivery = courier.api_provider === 'delhivery';
 
     const { data: shipment, error: shipmentError } = await supabase
       .from('shipments')
@@ -88,7 +90,7 @@ Deno.serve(async (req) => {
     const { data: address, error: addressError } = order.customer_id
       ? await supabase
           .from('customer_addresses')
-          .select('country_code, city, area, full_address, countries(name)')
+          .select('country_code, city, area, zip_code, state, full_address, countries(name)')
           .eq('customer_id', order.customer_id)
           .eq('is_default', true)
           .maybeSingle()
@@ -96,6 +98,24 @@ Deno.serve(async (req) => {
     if (addressError) throw addressError;
     if (!address?.full_address || !address.city || !address.country_code) {
       return json({ ok: false, error: 'Customer has no complete default address on file.' });
+    }
+    if (isDelhivery) {
+      // Delhivery routes by Indian pincode and state; a booking without them
+      // is rejected by the courier, so catch it here with a clear message.
+      if (address.country_code !== 'IN') {
+        return json({ ok: false, error: 'Delhivery only delivers within India — pick a different courier.' });
+      }
+      if (!/^\d{6}$/.test(address.zip_code ?? '')) {
+        return json({ ok: false, error: 'Customer address needs a 6-digit pincode before booking Delhivery. Add it in Customers.' });
+      }
+      if (!address.state?.trim()) {
+        return json({ ok: false, error: 'Customer address needs a state before booking Delhivery. Add it in Customers.' });
+      }
+      // Prepaid only (customers pay by UPI before dispatch), so the courier
+      // declares the goods value — which has to be in INR for an Indian order.
+      if (order.currency_code !== 'INR') {
+        return json({ ok: false, error: `Delhivery bookings need an INR order (this one is ${order.currency_code}).` });
+      }
     }
 
     // NextDrop's to_country/from_country want the full country name (every
@@ -117,8 +137,11 @@ Deno.serve(async (req) => {
     // other than the courier account's on-file branch — adapters that
     // support it (NextDrop: /Order/thirdparty_order) need the actual
     // pickup address/contact spelled out, via CreateShipmentInput.shipFrom.
+    // Delhivery always ships from its registered warehouse (credentials), so
+    // the leg's pickup location only matters for NextDrop's alternate-address
+    // booking.
     let shipFrom: CreateShipmentInput['shipFrom'];
-    if (leg.pickup_location_id) {
+    if (leg.pickup_location_id && !isDelhivery) {
       const { data: pickupLocation, error: pickupError } = await supabase
         .from('pickup_locations')
         .select('name, address, city, contact_person, contact_phone, is_default')
@@ -162,6 +185,9 @@ Deno.serve(async (req) => {
       currencyCode: order.currency_code,
       codAmount: order.payment_method === 'cod' ? Number(order.total) : undefined,
       shipFrom,
+      receiverPostalCode: address.zip_code ?? undefined,
+      receiverState: address.state ?? undefined,
+      invoiceValue: isDelhivery ? Number(order.total) : undefined,
     };
 
     const result = await adapter.createShipment(input);
@@ -176,6 +202,15 @@ Deno.serve(async (req) => {
       })
       .eq('id', shipmentLegId);
     if (updateError) throw updateError;
+
+    // The booking itself already succeeded, so a timeline write failure must
+    // not turn this into an error the caller would treat as a failed booking.
+    const { error: timelineError } = await supabase.from('order_timeline').insert({
+      order_id: order.id,
+      step: 'courier_booked',
+      note: `${courier.name} booked (${courier.api_environment ?? 'production'}) — tracking ${result.trackingNumber}`,
+    });
+    if (timelineError) console.error('create-shipment: timeline write failed', timelineError);
 
     return json({ ok: true, trackingNumber: result.trackingNumber });
   } catch (err) {

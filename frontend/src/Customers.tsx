@@ -205,6 +205,7 @@ function CustomerDetailPanel({
   const [city, setCity] = useState('');
   const [area, setArea] = useState('');
   const [zipCode, setZipCode] = useState('');
+  const [stateProvince, setStateProvince] = useState('');
   const [fullAddress, setFullAddress] = useState('');
   const [googleLocationLink, setGoogleLocationLink] = useState('');
 
@@ -225,7 +226,7 @@ function CustomerDetailPanel({
           .single(),
         supabase
           .from('customer_addresses')
-          .select('id, country_code, city, area, zip_code, full_address, google_location_link')
+          .select('id, country_code, city, area, zip_code, state, full_address, google_location_link')
           .eq('customer_id', customerId)
           .eq('is_default', true)
           .maybeSingle(),
@@ -261,6 +262,7 @@ function CustomerDetailPanel({
         setCity(matchedCity ?? storedCity);
         setArea(a.area ?? '');
         setZipCode(a.zip_code ?? '');
+        setStateProvince(a.state ?? '');
         setFullAddress(a.full_address ?? '');
         setGoogleLocationLink(a.google_location_link ?? '');
       }
@@ -271,6 +273,12 @@ function CustomerDetailPanel({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return setError('Name is required.');
+    // Delhivery books by Indian pincode and state, so both are required
+    // whenever the address is in India.
+    if (countryCode === 'IN') {
+      if (!/^\d{6}$/.test(zipCode.trim())) return setError('Indian addresses need a 6-digit pincode.');
+      if (!stateProvince.trim()) return setError('Indian addresses need a state.');
+    }
 
     setSubmitting(true);
     setError(null);
@@ -336,7 +344,7 @@ function CustomerDetailPanel({
       }
     }
 
-    const hasAddressInput = Boolean(countryCode || city.trim() || area.trim() || zipCode.trim() || fullAddress.trim() || googleLocationLink.trim());
+    const hasAddressInput = Boolean(countryCode || city.trim() || area.trim() || zipCode.trim() || stateProvince.trim() || fullAddress.trim() || googleLocationLink.trim());
     if (hasAddressInput) {
       const addressValues = {
         customer_id: id,
@@ -344,6 +352,7 @@ function CustomerDetailPanel({
         city: city.trim() || null,
         area: area.trim() || null,
         zip_code: zipCode.trim() || null,
+        state: stateProvince.trim() || null,
         full_address: fullAddress.trim() || null,
         google_location_link: googleLocationLink.trim() || null,
         is_default: true,
@@ -623,9 +632,21 @@ function CustomerDetailPanel({
               <Input id="cust-area" value={area} onChange={(e) => setArea(e.target.value)} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cust-zip">Zip code</Label>
-              <Input id="cust-zip" value={zipCode} onChange={(e) => setZipCode(e.target.value)} />
+              <Label htmlFor="cust-zip">{countryCode === 'IN' ? 'Pincode' : 'Zip code'}</Label>
+              <Input
+                id="cust-zip"
+                value={zipCode}
+                onChange={(e) => setZipCode(e.target.value)}
+                inputMode={countryCode === 'IN' ? 'numeric' : undefined}
+                maxLength={countryCode === 'IN' ? 6 : undefined}
+              />
             </div>
+            {countryCode === 'IN' && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="cust-state">State</Label>
+                <Input id="cust-state" value={stateProvince} onChange={(e) => setStateProvince(e.target.value)} />
+              </div>
+            )}
             <div className="col-span-2 flex flex-col gap-1.5">
               <Label htmlFor="cust-full-address">Full address</Label>
               <Textarea

@@ -15,3 +15,14 @@ export function displayCourierName(
   const manual = manualCourierName?.trim();
   return manual || courierName || null;
 }
+
+// Mirror of functions/_shared/courierBooking.ts — keep the two in sync.
+// Whether an order's courier leg is booked automatically through its API.
+export function isAutoBookingEnabled(courier: {
+  api_provider: string | null;
+  integration_status: string;
+  api_environment?: string | null;
+}): boolean {
+  if (courier.integration_status === 'integrated') return true;
+  return courier.api_provider === 'delhivery' && courier.api_environment === 'staging';
+}

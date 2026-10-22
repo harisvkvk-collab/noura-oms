@@ -42,6 +42,7 @@ type Courier = {
   whatsapp_number: string | null;
   contact_person: string | null;
   integration_status: string | null;
+  api_environment: 'staging' | 'production';
 };
 
 type KeyStatusRow = {
@@ -107,7 +108,10 @@ function CourierApiKeysPanel() {
     (async () => {
       setLoading(true);
       const [courierRes, statusRes] = await Promise.all([
-        supabase.from('couriers').select('id, name, api_provider, whatsapp_number, contact_person, integration_status').order('name'),
+        supabase
+          .from('couriers')
+          .select('id, name, api_provider, whatsapp_number, contact_person, integration_status, api_environment')
+          .order('name'),
         supabase
           .from('courier_api_key_status')
           .select('courier_id, environment, has_api_token, has_pickup_location, has_customer_branch, active'),
@@ -274,12 +278,34 @@ function CredentialForm({
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [changingEnvironment, setChangingEnvironment] = useState(false);
 
   function statusFor(field: CredentialFieldDef) {
+    // Base URLs aren't tracked by the status view (only secrets are), so
+    // there's no "saved" flag for them — they always show their default.
+    if (field.key === 'base_url') return false;
     const env = resolveEnvironment(field);
     const row = statusRows.find((r) => r.environment === env);
     if (!row) return false;
     return Boolean(row[statusColumnFor(field)]);
+  }
+
+  async function handleEnvironmentChange(next: 'staging' | 'production') {
+    setChangingEnvironment(true);
+    try {
+      const result = await callEdgeFunction<{ ok: boolean; error?: string }>('save-courier-credential', {
+        courierId: courier.id,
+        apiEnvironment: next,
+      });
+      if (!result.ok) throw new Error(result.error ?? 'Failed to change environment.');
+      setTestResult(null);
+      toast.success(`${courier.name} bookings now use ${next}.`);
+      onSaved();
+    } catch (err) {
+      toast.error(`Failed to change environment: ${getErrorMessage(err)}`);
+    } finally {
+      setChangingEnvironment(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -292,7 +318,10 @@ function CredentialForm({
     // not-environment-scoped pickup location, which also resolves to
     // 'production') must land in the same write, not two separate ones
     // that would each stomp the other's columns via their defaults.
-    const rowsByEnv = new Map<string, { api_token?: string; pickup_location?: string; extraConfig?: Record<string, string> }>();
+    const rowsByEnv = new Map<
+      string,
+      { api_token?: string; pickup_location?: string; base_url?: string; extraConfig?: Record<string, string> }
+    >();
     fields.forEach((field, idx) => {
       const raw = values[idx];
       if (!raw || !raw.trim()) return; // blank = leave this field unchanged
@@ -301,7 +330,7 @@ function CredentialForm({
       if ('extraConfig' in field && field.extraConfig) {
         entry.extraConfig = { ...(entry.extraConfig ?? {}), [field.key]: raw.trim() };
       } else {
-        entry[field.key as 'api_token' | 'pickup_location'] = raw.trim();
+        entry[field.key as 'api_token' | 'pickup_location' | 'base_url'] = raw.trim();
       }
       rowsByEnv.set(env, entry);
     });
@@ -367,7 +396,28 @@ function CredentialForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4 border-t border-border pt-4">
+      {courier.api_provider === 'delhivery' && (
+        <div className="flex flex-col gap-1.5 sm:w-96">
+          <Label htmlFor="courier-api-env">New bookings use</Label>
+          <select
+            id="courier-api-env"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            value={courier.api_environment}
+            disabled={changingEnvironment}
+            onChange={(e) => handleEnvironmentChange(e.target.value as 'staging' | 'production')}
+          >
+            <option value="staging">Staging (test sandbox)</option>
+            <option value="production">Production (live)</option>
+          </select>
+          <p className="text-xs text-muted-foreground">
+            Staging books into Delhivery's sandbox while the courier stays manual, so live orders keep using the manual flow.
+            Live bookings only happen once the courier's status is set to integrated.
+          </p>
+        </div>
+      )}
+
       {fields.map((field, idx) => {
+        const isUrl = field.key === 'base_url';
         const isSaved = statusFor(field);
         const hasNewValue = (values[idx] ?? '').trim().length > 0;
         return (
@@ -375,21 +425,28 @@ function CredentialForm({
             <div className="flex items-center gap-2">
               <Label htmlFor={`field-${idx}`}>{field.label}</Label>
               <Badge variant={hasNewValue ? 'warning' : isSaved ? 'success' : 'neutral'}>
-                {hasNewValue ? 'New value' : isSaved ? '✓ Saved' : 'Not set'}
+                {hasNewValue ? 'New value' : isUrl ? 'Default' : isSaved ? '✓ Saved' : 'Not set'}
               </Badge>
             </div>
             <div className="relative">
               <Input
                 id={`field-${idx}`}
-                type="password"
+                type={isUrl ? 'url' : 'password'}
                 autoComplete="off"
-                placeholder={isSaved ? '••••••• (saved value)' : 'Enter value to save'}
+                placeholder={
+                  isUrl ? field.defaultValue : isSaved ? '••••••• (saved value)' : 'Enter value to save'
+                }
                 value={values[idx] ?? ''}
                 onChange={(e) => setValues((v) => ({ ...v, [idx]: e.target.value }))}
               />
               {isSaved && !hasNewValue && (
                 <p className="text-xs text-muted-foreground mt-1">
                   Value is saved. Enter new value above to update, or leave empty to keep unchanged.
+                </p>
+              )}
+              {isUrl && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Leave empty to use the default shown above.
                 </p>
               )}
             </div>

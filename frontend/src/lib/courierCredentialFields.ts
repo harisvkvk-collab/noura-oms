@@ -6,7 +6,15 @@
 // (skip it entirely to just get the generic single-API-key fallback), and
 // eventually its own adapter file — this screen itself doesn't change.
 
-export type CredentialFieldKey = 'api_token' | 'pickup_location';
+export type CredentialFieldKey = 'api_token' | 'pickup_location' | 'base_url';
+
+// Documented host for each Delhivery environment (adapters/delhivery.ts uses
+// the same values when no base URL is saved). Shown as the field's
+// placeholder — a blank save leaves the stored value unchanged.
+export const DELHIVERY_DEFAULT_BASE_URLS = {
+  staging: 'https://staging-express.delhivery.com',
+  production: 'https://track.delhivery.com',
+} as const;
 
 // Fields not covered by a real courier_api_credentials column land in
 // extra_config instead (a jsonb column meant for exactly this — "wallet
@@ -18,8 +26,10 @@ export type CredentialFieldKey = 'api_token' | 'pickup_location';
 // with a valid API key on file.
 export type ExtraConfigFieldKey = 'customer_branch';
 
+// kind: 'url' fields are plain text (not masked) — a base URL isn't a
+// secret. defaultValue is shown as the placeholder only.
 export type CredentialFieldDef =
-  | { key: CredentialFieldKey; label: string; environment: 'staging' | 'production' | false }
+  | { key: CredentialFieldKey; label: string; environment: 'staging' | 'production' | false; kind?: 'url'; defaultValue?: string }
   | { key: ExtraConfigFieldKey; label: string; environment: 'staging' | 'production' | false; extraConfig: true };
 
 export const GENERIC_FALLBACK_FIELDS: CredentialFieldDef[] = [
@@ -33,7 +43,10 @@ export const courierCredentialFields: Record<string, CredentialFieldDef[]> = {
   ],
   delhivery: [
     { key: 'api_token', label: 'Staging Token', environment: 'staging' },
+    { key: 'base_url', label: 'Staging Base URL', environment: 'staging', kind: 'url', defaultValue: DELHIVERY_DEFAULT_BASE_URLS.staging },
     { key: 'api_token', label: 'Production Token', environment: 'production' },
+    { key: 'base_url', label: 'Production Base URL', environment: 'production', kind: 'url', defaultValue: DELHIVERY_DEFAULT_BASE_URLS.production },
+    // Must exactly match the warehouse name registered in Delhivery.
     { key: 'pickup_location', label: 'Registered Warehouse Name', environment: false },
   ],
 };

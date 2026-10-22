@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
 
     const { data: leg, error: legError } = await supabase
       .from('shipment_legs')
-      .select('id, tracking_number, couriers(name, api_provider, integration_status)')
+      .select('id, tracking_number, couriers(name, api_provider, integration_status, api_environment)')
       .eq('id', shipmentLegId)
       .maybeSingle();
     if (legError) throw legError;
@@ -45,7 +45,27 @@ Deno.serve(async (req) => {
     }
 
     const result = await adapter.generatePostageLabel(leg.tracking_number);
-    return json({ ok: true, fileName: result.fileName, contentType: result.contentType, base64Data: result.base64Data });
+
+    // Delhivery labels are kept in the private courier-labels bucket so they
+    // can be found again later. A failed upload doesn't stop printing — the
+    // label still comes back to the browser, and the response says it wasn't stored.
+    let stored = false;
+    if (courier.api_provider === 'delhivery') {
+      const bytes = Uint8Array.from(atob(result.base64Data), (c) => c.charCodeAt(0));
+      const { error: uploadError } = await supabase.storage
+        .from('courier-labels')
+        .upload(`delhivery/${leg.tracking_number}.pdf`, bytes, { contentType: result.contentType, upsert: true });
+      if (uploadError) console.error('generate-postage-label: label upload failed', uploadError);
+      stored = !uploadError;
+    }
+
+    return json({
+      ok: true,
+      fileName: result.fileName,
+      contentType: result.contentType,
+      base64Data: result.base64Data,
+      stored,
+    });
   } catch (err) {
     console.error('generate-postage-label failed', err);
     return json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error.' });

@@ -55,7 +55,23 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'Admin access required.' }, 403);
     }
 
-    const { courierId, environment, fields } = await req.json();
+    const body = await req.json();
+    const { courierId, environment, fields } = body;
+
+    // Separate action: switching which environment new bookings use. Lives
+    // on the courier row itself, not in courier_api_credentials.
+    if (body.apiEnvironment !== undefined) {
+      if (!courierId || !['staging', 'production'].includes(body.apiEnvironment)) {
+        return json({ ok: false, error: 'courierId and a valid apiEnvironment are required.' }, 400);
+      }
+      const { error: envError } = await serviceClient
+        .from('couriers')
+        .update({ api_environment: body.apiEnvironment })
+        .eq('id', courierId);
+      if (envError) throw envError;
+      return json({ ok: true });
+    }
+
     if (!courierId || !environment || !fields || typeof fields !== 'object') {
       return json({ ok: false, error: 'courierId, environment, and fields are required.' }, 400);
     }
@@ -72,6 +88,22 @@ Deno.serve(async (req) => {
     const row: Record<string, unknown> = { courier_id: courierId, environment, active: true };
     if (typeof fields.api_token === 'string') row.api_token = fields.api_token;
     if (typeof fields.pickup_location === 'string') row.pickup_location = fields.pickup_location;
+    if (typeof fields.base_url === 'string') {
+      // Only https URLs; a blank string would clear the column, so skip it.
+      const baseUrl = fields.base_url.trim();
+      if (baseUrl) {
+        let parsed: URL | null = null;
+        try {
+          parsed = new URL(baseUrl);
+        } catch {
+          parsed = null;
+        }
+        if (!parsed || parsed.protocol !== 'https:') {
+          return json({ ok: false, error: 'Base URL must be a full https:// address.' }, 400);
+        }
+        row.base_url = parsed.origin;
+      }
+    }
     if (fields.extraConfig && typeof fields.extraConfig === 'object') {
       row.extra_config = { ...((existingRow?.extra_config as Record<string, unknown>) ?? {}), ...fields.extraConfig };
     }

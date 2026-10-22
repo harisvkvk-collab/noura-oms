@@ -26,18 +26,26 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { courierId } = await req.json();
+    const { courierId, environment } = await req.json();
     if (!courierId) return json({ ok: false, detail: 'courierId is required.' });
+    if (environment !== undefined && environment !== 'staging' && environment !== 'production') {
+      return json({ ok: false, detail: 'environment must be staging or production.' });
+    }
 
     const { data: courier, error: courierError } = await supabase
       .from('couriers')
-      .select('name, api_provider')
+      .select('name, api_provider, api_environment')
       .eq('id', courierId)
       .maybeSingle();
     if (courierError) throw courierError;
     if (!courier) return json({ ok: false, detail: 'Courier not found.' });
 
-    const adapter = await getAdapterForCourier(supabase, courier);
+    // The Settings screen passes the environment whose token is being tested,
+    // so a staging token can be checked before the courier goes live.
+    const adapter = await getAdapterForCourier(supabase, {
+      ...courier,
+      api_environment: environment ?? courier.api_environment,
+    });
     if (!adapter) {
       return json({ ok: false, detail: `No active API credentials on file for ${courier.name}.` });
     }

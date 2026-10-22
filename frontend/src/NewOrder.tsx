@@ -25,7 +25,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PAYMENT_METHOD_LABELS, HOME_COUNTRY } from '@/lib/orderConstants';
-import { isGenericCourierName } from '@/lib/courier';
+import { isAutoBookingEnabled, isGenericCourierName } from '@/lib/courier';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { tryNormalizePhoneForSearch } from '@/lib/phoneUtils';
 
@@ -36,7 +36,14 @@ type Currency = { code: string; name: string; symbol: string | null };
 type ExchangeRate = { currency_code: string; rate_to_aed: number };
 type Customer = { id: string; name: string; phone: string | null };
 type Product = { id: string; name: string; selling_price: number; stock_qty: number; cost_price: number };
-type Courier = { id: string; name: string; default_cod_fee: number | null; integration_status: string };
+type Courier = {
+  id: string;
+  name: string;
+  default_cod_fee: number | null;
+  integration_status: string;
+  api_provider: string | null;
+  api_environment: 'staging' | 'production';
+};
 type CountryPaymentMethod = { country_code: string; payment_method: string; is_default: boolean };
 type PickupLocation = { id: string; name: string; is_default: boolean };
 
@@ -88,7 +95,7 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
         supabase.from('products').select('id, name, selling_price, stock_qty, cost_price').eq('active', true).order('name'),
         supabase
           .from('couriers')
-          .select('id, name, default_cod_fee, integration_status')
+          .select('id, name, default_cod_fee, integration_status, api_provider, api_environment')
           .eq('active', true)
           .order('name'),
         supabase.from('country_payment_methods').select('country_code, payment_method, is_default'),
@@ -391,13 +398,13 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
           .single();
         if (legError) throw legError;
 
-        // Integrated couriers (couriers.integration_status = 'integrated')
-        // get booked automatically via their adapter, right here — see
-        // functions/create-shipment. Failure is non-fatal (same "warn,
-        // don't block" precedent as the photo-upload handling below): the
-        // leg just stays is_manual with no tracking number, same as any
-        // manual courier, and staff can chase it up by hand.
-        if (selectedCourier?.integration_status === 'integrated') {
+        // Couriers that pass isAutoBookingEnabled (integrated couriers, or
+        // Delhivery while on staging) get booked automatically via their
+        // adapter, right here — see functions/create-shipment. Failure is
+        // non-fatal (same "warn, don't block" precedent as the photo-upload
+        // handling below): the leg just stays is_manual with no tracking
+        // number, same as any manual courier, and staff can chase it up by hand.
+        if (selectedCourier && isAutoBookingEnabled(selectedCourier)) {
           try {
             const result = await callEdgeFunction<{ ok: boolean; trackingNumber?: string; error?: string }>(
               'create-shipment',

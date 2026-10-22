@@ -9,9 +9,9 @@ import { ArrowLeft, CheckCircle2, Circle, FileText, Eye, X } from 'lucide-react'
 import { supabase } from './supabaseClient';
 import { embeddedName, firstEmbedded } from '@/lib/supabaseRelations';
 import { PAYMENT_METHOD_LABELS } from '@/lib/orderConstants';
-import { displayCourierName } from '@/lib/courier';
+import { displayCourierName, isAutoBookingEnabled } from '@/lib/courier';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
-import { openShippingSlip } from '@/lib/shippingSlip';
+import { PrintSlipModal } from '@/components/PrintSlipModal';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -74,6 +74,7 @@ type ShipmentLeg = {
   cost: number | null;
   tracking_number: string | null;
   courierIntegrated: boolean;
+  courierProvider: string | null;
   courierWhatsappNumber: string | null;
   pickup_location_id: string | null;
   pickupLocationName: string | null;
@@ -114,7 +115,7 @@ async function fetchOrderDetail(orderId: string) {
       .order('created_at', { ascending: true }),
     supabase
       .from('shipments')
-      .select('shipment_legs(id, courier_id, cost, tracking_number, manual_courier_name, pickup_location_id, couriers(name, integration_status, whatsapp_number))')
+      .select('shipment_legs(id, courier_id, cost, tracking_number, manual_courier_name, pickup_location_id, couriers(name, api_provider, api_environment, integration_status, whatsapp_number))')
       .eq('order_id', orderId)
       .is('return_id', null)
       .maybeSingle(),
@@ -210,7 +211,8 @@ async function fetchOrderDetail(orderId: string) {
         courier_id: firstLeg.courier_id,
         cost: firstLeg.cost == null ? null : Number(firstLeg.cost),
         tracking_number: firstLeg.tracking_number,
-        courierIntegrated: legCourier?.integration_status === 'integrated',
+        courierIntegrated: legCourier ? isAutoBookingEnabled(legCourier) : false,
+        courierProvider: legCourier?.api_provider ?? null,
         courierWhatsappNumber: legCourier?.whatsapp_number ?? null,
         pickup_location_id: firstLeg.pickup_location_id,
         pickupLocationName: pickupLocationData?.name ?? null,
@@ -337,8 +339,9 @@ export function OrderDetail({
   const [submittingStep, setSubmittingStep] = useState<string | null>(null);
   const [sendWhatsApp, setSendWhatsApp] = useState(true);
   const [postageTrackingInput, setPostageTrackingInput] = useState('');
-  const [printingSlip, setPrintingSlip] = useState(false);
+  const [showPrintSlipModal, setShowPrintSlipModal] = useState(false);
   const [retryingBooking, setRetryingBooking] = useState(false);
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [reprintingLabel, setReprintingLabel] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -495,17 +498,26 @@ export function OrderDetail({
     setError(null);
     try {
       if (shipmentLeg.courierIntegrated && shipmentLeg.tracking_number) {
-        const result = await callEdgeFunction<{
-          ok: boolean;
-          fileName?: string;
-          contentType?: string;
-          base64Data?: string;
-          error?: string;
-        }>('generate-postage-label', { shipmentLegId: shipmentLeg.id });
-        if (!result.ok || !result.base64Data) {
-          throw new Error(result.error ?? 'Failed to generate postage label.');
+        try {
+          const result = await callEdgeFunction<{
+            ok: boolean;
+            fileName?: string;
+            contentType?: string;
+            base64Data?: string;
+            error?: string;
+          }>('generate-postage-label', { shipmentLegId: shipmentLeg.id });
+          if (!result.ok || !result.base64Data) {
+            throw new Error(result.error ?? 'Failed to generate postage label.');
+          }
+          openPdfFromBase64(result.base64Data, result.contentType);
+        } catch (labelErr) {
+          // Delhivery's label endpoint isn't confirmed yet (see adapters/delhivery.ts),
+          // so if it fails, print our own slip instead of blocking the order.
+          if (shipmentLeg.courierProvider !== 'delhivery') throw labelErr;
+          const reason = labelErr instanceof Error ? labelErr.message : 'unknown error';
+          setError(`Delhivery label failed (${reason}) — printed our shipping slip instead.`);
+          setShowPrintSlipModal(true);
         }
-        openPdfFromBase64(result.base64Data, result.contentType);
       } else if (postageTrackingInput.trim()) {
         const { error: trackingError } = await supabase
           .from('shipment_legs')
@@ -521,16 +533,8 @@ export function OrderDetail({
     await advanceTo('postage_printed');
   }
 
-  async function handlePrintSlip() {
-    setPrintingSlip(true);
-    setError(null);
-    try {
-      await openShippingSlip(orderId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to build shipping slip.');
-    } finally {
-      setPrintingSlip(false);
-    }
+  function handlePrintSlip() {
+    setShowPrintSlipModal(true);
   }
 
   // The 'Generate & print postage' button inside the timeline (below) only
@@ -586,6 +590,26 @@ export function OrderDetail({
       setError(err instanceof Error ? err.message : 'Failed to retry courier booking.');
     } finally {
       setRetryingBooking(false);
+    }
+  }
+
+  // Pulls the latest status from the courier (Delhivery: pull-based tracking,
+  // no webhook) and reloads the page so the timeline shows it.
+  async function handleRefreshStatus() {
+    if (!shipmentLeg) return;
+    setRefreshingStatus(true);
+    setError(null);
+    try {
+      const result = await callEdgeFunction<{ ok: boolean; detail?: string; error?: string }>(
+        'refresh-shipment-status',
+        { shipmentLegId: shipmentLeg.id },
+      );
+      if (!result.ok) throw new Error(result.error ?? 'Status refresh failed.');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to refresh status.');
+    } finally {
+      setRefreshingStatus(false);
     }
   }
 
@@ -740,12 +764,17 @@ export function OrderDetail({
               <FileText className="mr-1 size-4" />
               Order details
             </Button>
-            <Button type="button" size="sm" variant="outline" disabled={printingSlip} onClick={handlePrintSlip}>
-              {printingSlip ? 'Building…' : 'Print shipping slip'}
+            <Button type="button" size="sm" variant="outline" onClick={handlePrintSlip}>
+              Print shipping slip
             </Button>
             {shipmentLeg?.courierIntegrated && !shipmentLeg?.tracking_number && (
               <Button type="button" size="sm" variant="outline" disabled={retryingBooking} onClick={handleRetryBooking}>
                 {retryingBooking ? 'Retrying…' : 'Retry courier booking'}
+              </Button>
+            )}
+            {shipmentLeg?.courierProvider === 'delhivery' && shipmentLeg?.tracking_number && (
+              <Button type="button" size="sm" variant="outline" disabled={refreshingStatus} onClick={handleRefreshStatus}>
+                {refreshingStatus ? 'Refreshing…' : 'Refresh status'}
               </Button>
             )}
             {shipmentLeg?.courierIntegrated && shipmentLeg?.tracking_number && (
@@ -1076,6 +1105,8 @@ export function OrderDetail({
       )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <PrintSlipModal orderId={orderId} open={showPrintSlipModal} onOpenChange={setShowPrintSlipModal} />
     </div>
   );
 }

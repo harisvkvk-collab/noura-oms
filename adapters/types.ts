@@ -25,14 +25,14 @@ export interface CreateShipmentInput {
   specialInstruction?: string;
   currencyCode?: string;
   codAmount?: number;            // omit / 0 for non-COD orders
+  receiverPostalCode?: string;   // required by Delhivery (6-digit Indian pincode)
+  receiverState?: string;        // Delhivery
+  invoiceValue?: number;         // goods value, Delhivery total_amount
 
   // Set when the shipment_legs.pickup_location_id chosen for this leg isn't
-  // the pickup_locations row with is_default = true — i.e. staff picked a
-  // specific alternate address to ship from. Adapters that support
-  // shipping from somewhere other than the courier account's registered
-  // default location (NextDrop: /Order/thirdparty_order) should use these
-  // instead of their usual pickup address; adapters that don't support it
-  // should just ignore this field.
+  // the pickup_locations row with is_default = true. NextDrop uses these
+  // (/Order/thirdparty_order) to ship from an alternate address; adapters
+  // that don't support it ignore this field.
   shipFrom?: {
     contactName: string;
     contactPhone: string;
@@ -71,10 +71,8 @@ export interface DeliveryAdapter {
   createShipment(input: CreateShipmentInput): Promise<CreateShipmentResult>;
 
   // Cheap, side-effect-free credential check for the Settings screen's
-  // "Test connection" button — must never create/modify anything real
-  // (no bookings). Optional since not every adapter can find a safe
-  // endpoint to probe; the caller should say so plainly if it's missing
-  // rather than silently doing nothing.
+  // "Test connection" button. Must never create or modify anything real.
+  // Optional: callers say so plainly if an adapter doesn't provide one.
   testConnection?(): Promise<{ ok: boolean; detail: string }>;
 
   // Not every courier exposes a pull-based tracking endpoint (NextDrop relies
