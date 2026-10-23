@@ -94,7 +94,7 @@ async function refreshLeg(leg: LegRow): Promise<{ ok: boolean; status?: string; 
   if (!leg.tracking_number) return { ok: false, detail: 'No tracking number on this leg yet.' };
 
   const adapter = await getAdapterForCourier(supabase, courier);
-  if (!adapter) return { ok: false, detail: `No active API credentials on file for ${courier.name}.` };
+  if (!adapter) return { ok: false, detail: `No active ${courier.api_environment === 'staging' ? 'staging' : 'production'} API credentials on file for ${courier.name}.` };
   if (!adapter.trackShipment) return { ok: false, detail: `${courier.name} doesn't support status tracking.` };
 
   const update = await adapter.trackShipment(leg.tracking_number);

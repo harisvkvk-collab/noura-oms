@@ -78,6 +78,35 @@ export function buildDelhiveryConfig(
   };
 }
 
+// Accepts one Indian mobile in these forms only: 10 digits, 0+10, 91+10 or
+// +91+10 (spaces, dashes and brackets are ignored). The mobile must start
+// with 6-9. Anything else returns null, including extra digits, other
+// country codes, and short numbers. Never guesses by taking the last digits.
+export function normalizeIndianMobile(raw: string): string | null {
+  const digits = raw.trim().replace(/[\s\-()]/g, '');
+  const match = digits.match(/^(?:\+91|91|0)?([6-9]\d{9})$/);
+  return match ? match[1] : null;
+}
+
+// Checked locally before any request is sent, so a bad booking never reaches
+// Delhivery. Returns the first problem found, phrased for the staff member.
+export function validateDelhiveryShipment(input: CreateShipmentInput, pickupLocation: string): string | null {
+  if (!pickupLocation.trim()) return 'Delhivery warehouse name is not set for this environment.';
+  if (!input.receiverName.trim()) return 'Customer name is required for Delhivery.';
+  if (!input.receiverAddress.trim()) return 'Customer address is required for Delhivery.';
+  if (!input.receiverCity.trim()) return 'Customer city is required for Delhivery.';
+  if (!/^\d{6}$/.test(input.receiverPostalCode ?? '')) return 'Delhivery needs a 6-digit pincode.';
+  if (!input.receiverState?.trim()) return 'Delhivery needs the customer state.';
+  if (!normalizeIndianMobile(input.receiverPhone ?? '')) {
+    return 'Delhivery needs a valid Indian mobile number: 10 digits, optionally with +91 or 0 in front.';
+  }
+  if (typeof input.invoiceValue !== 'number' || !Number.isFinite(input.invoiceValue) || input.invoiceValue <= 0) {
+    return 'Delhivery needs a finite order value greater than zero.';
+  }
+  if (input.codAmount && input.codAmount > 0) return 'Delhivery bookings are prepaid only (no COD in India).';
+  return null;
+}
+
 export class DelhiveryAdapter implements DeliveryAdapter {
   courierName = 'Delhivery';
   private config: DelhiveryConfig;
@@ -100,16 +129,32 @@ export class DelhiveryAdapter implements DeliveryAdapter {
       if (res.status === 401 || res.status === 403) {
         return { ok: false, detail: `Token rejected by Delhivery (HTTP ${res.status}). Check the token matches this environment.` };
       }
-      if (!res.ok) {
-        return { ok: false, detail: `Delhivery responded with HTTP ${res.status}.` };
+      if (res.status >= 500) {
+        return { ok: false, detail: `Delhivery server error (HTTP ${res.status}). Try again later.` };
       }
-      return { ok: true, detail: `Token accepted by ${new URL(this.config.baseUrl).host}.` };
+      if (!res.ok) {
+        return { ok: false, detail: `Unexpected response from Delhivery (HTTP ${res.status}).` };
+      }
+      // A valid answer is a JSON object with ShipmentData, even when the list
+      // is empty (an unknown waybill). Anything else is treated as unexpected.
+      const body = await res.json().catch(() => null);
+      if (!body || typeof body !== 'object' || !Array.isArray((body as { ShipmentData?: unknown }).ShipmentData)) {
+        return { ok: false, detail: 'Delhivery answered, but the response format was not recognised.' };
+      }
+      const found = (body as { ShipmentData: unknown[] }).ShipmentData.length;
+      return {
+        ok: true,
+        detail: `Token accepted by ${new URL(this.config.baseUrl).host} (${found === 0 ? 'no shipment for the test waybill, as expected' : 'lookup returned data'}).`,
+      };
     } catch {
       return { ok: false, detail: `Could not reach ${new URL(this.config.baseUrl).host}.` };
     }
   }
 
   async createShipment(input: CreateShipmentInput): Promise<CreateShipmentResult> {
+    const problem = validateDelhiveryShipment(input, this.config.pickupLocation);
+    if (problem) throw new Error(`Delhivery booking not sent: ${problem}`);
+
     const isCod = !!input.codAmount && input.codAmount > 0;
 
     const payload = {
@@ -121,7 +166,7 @@ export class DelhiveryAdapter implements DeliveryAdapter {
           city: input.receiverCity,
           state: input.receiverState ?? '',
           country: input.receiverCountry || 'India',
-          phone: input.receiverPhone,
+          phone: normalizeIndianMobile(input.receiverPhone ?? '') ?? '',
           order: input.orderNumber,                // echoed back on tracking
           payment_mode: isCod ? 'COD' : 'Prepaid', // India is prepaid (UPI) in practice
           cod_amount: isCod ? String(input.codAmount) : '0',
@@ -154,7 +199,11 @@ export class DelhiveryAdapter implements DeliveryAdapter {
       throw new Error(`Delhivery createShipment failed: HTTP ${res.status}`);
     }
 
-    const json = await res.json();
+    // Body is parsed but never logged or echoed in errors (it can include
+    // customer data); only the status code is reported.
+    const json = await res.json().catch(() => {
+      throw new Error('Delhivery createShipment returned a non-JSON response.');
+    });
     // VERIFY on staging: expected shape is { success: true, packages: [{ waybill, status, remarks }] }
     const pkg = json?.packages?.[0];
     if (!json?.success || !pkg?.waybill) {

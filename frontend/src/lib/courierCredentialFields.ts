@@ -46,8 +46,10 @@ export const courierCredentialFields: Record<string, CredentialFieldDef[]> = {
     { key: 'base_url', label: 'Staging Base URL', environment: 'staging', kind: 'url', defaultValue: DELHIVERY_DEFAULT_BASE_URLS.staging },
     { key: 'api_token', label: 'Production Token', environment: 'production' },
     { key: 'base_url', label: 'Production Base URL', environment: 'production', kind: 'url', defaultValue: DELHIVERY_DEFAULT_BASE_URLS.production },
-    // Must exactly match the warehouse name registered in Delhivery.
-    { key: 'pickup_location', label: 'Registered Warehouse Name', environment: false },
+    // Must exactly match a warehouse registered in that environment's
+    // Delhivery account. Staging and production are kept separate on purpose.
+    { key: 'pickup_location', label: 'Staging Warehouse Name', environment: 'staging' },
+    { key: 'pickup_location', label: 'Production Warehouse Name (dispatch warehouse)', environment: 'production' },
   ],
 };
 

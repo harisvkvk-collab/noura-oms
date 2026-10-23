@@ -14,7 +14,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { getAdapterForCourier } from '../_shared/getAdapterForCourier.ts';
-import { isAutoBookingEnabled } from '../_shared/courierBooking.ts';
+import { bookingBlockedReason } from '../_shared/courierBooking.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 import type { CreateShipmentInput } from '../../adapters/types.ts';
 
@@ -60,9 +60,10 @@ Deno.serve(async (req) => {
     // — see frontend/src/lib/supabaseRelations.ts) — take the first entry.
     const courier = Array.isArray(leg.couriers) ? leg.couriers[0] : leg.couriers;
     if (!courier) return json({ ok: false, error: 'Courier not found for this leg.' });
-    if (!isAutoBookingEnabled(courier)) {
-      return json({ ok: false, error: `${courier.name} is not an integrated courier.` });
-    }
+    // Production booking stays blocked while the courier is manual. This runs
+    // before any adapter is built, so no courier API call can happen.
+    const blockedReason = bookingBlockedReason(courier);
+    if (blockedReason) return json({ ok: false, error: blockedReason });
     const isDelhivery = courier.api_provider === 'delhivery';
 
     const { data: shipment, error: shipmentError } = await supabase
@@ -167,7 +168,7 @@ Deno.serve(async (req) => {
 
     const adapter = await getAdapterForCourier(supabase, courier);
     if (!adapter) {
-      return json({ ok: false, error: `No active API credentials on file for ${courier.name}.` });
+      return json({ ok: false, error: `No active ${courier.api_environment === 'staging' ? 'staging' : 'production'} API credentials on file for ${courier.name}.` });
     }
 
     const input: CreateShipmentInput = {

@@ -27,16 +27,11 @@ export async function getAdapterForCourier(
   switch (courier.api_provider) {
     case 'nextdrop':
       return new NextDropAdapter(buildNextDropConfig(credentials));
-    case 'delhivery': {
-      // The warehouse name is entered once (stored on the production row),
-      // so a staging row without its own copy falls back to that one.
-      let pickupLocation = credentials.pickupLocation;
-      if (!pickupLocation && environment === 'staging') {
-        const production = await getCourierCredentials(supabase, courier.name, 'production');
-        pickupLocation = production?.pickupLocation ?? null;
-      }
-      return new DelhiveryAdapter(buildDelhiveryConfig({ ...credentials, pickupLocation }, environment));
-    }
+    case 'delhivery':
+      // Each environment has its own warehouse name. A staging booking never
+      // falls back to the production warehouse, since Delhivery's sandbox
+      // only knows the warehouses registered there.
+      return new DelhiveryAdapter(buildDelhiveryConfig(credentials, environment));
     default:
       return null;
   }

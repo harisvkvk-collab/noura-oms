@@ -41,13 +41,15 @@ Deno.serve(async (req) => {
     if (!courier) return json({ ok: false, detail: 'Courier not found.' });
 
     // The Settings screen passes the environment whose token is being tested,
-    // so a staging token can be checked before the courier goes live.
+    // so a staging token can be checked before the courier goes live. The
+    // same value drives both the adapter lookup and the error message.
+    const effectiveEnvironment: 'staging' | 'production' = (environment ?? courier.api_environment) === 'staging' ? 'staging' : 'production';
     const adapter = await getAdapterForCourier(supabase, {
       ...courier,
-      api_environment: environment ?? courier.api_environment,
+      api_environment: effectiveEnvironment,
     });
     if (!adapter) {
-      return json({ ok: false, detail: `No active API credentials on file for ${courier.name}.` });
+      return json({ ok: false, detail: `No active ${effectiveEnvironment} API credentials on file for ${courier.name}.` });
     }
     if (!adapter.testConnection) {
       return json({ ok: false, detail: `${courier.name}'s integration doesn't support a connection test yet.` });
