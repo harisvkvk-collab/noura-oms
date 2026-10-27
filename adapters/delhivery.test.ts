@@ -303,3 +303,58 @@ test('connection: other Success:false replies are still unexpected', async () =>
     m.restore();
   }
 });
+
+const PDF_BYTES = new TextEncoder().encode('%PDF-1.4\n% test label\n');
+
+function labelFetch(linkBody: string | null, pdfResponse: () => Response) {
+  return mockFetch((call) => {
+    if (call.url.includes('/api/p/packing_slip')) {
+      return json({ packages: [{ pdf_download_link: linkBody ?? undefined }] });
+    }
+    return pdfResponse();
+  });
+}
+
+test('label: JSON link is followed without the API token and returns a PDF', async () => {
+  const link = 'https://signed.example.amazonaws.com/label.pdf?X-Amz-Signature=abc';
+  const m = labelFetch(link, () => new Response(PDF_BYTES, { status: 200 }));
+  try {
+    const label = await adapter().generatePostageLabel('1234567890');
+    assert.equal(label.contentType, 'application/pdf');
+    assert.equal(Buffer.from(label.base64Data, 'base64').subarray(0, 4).toString(), '%PDF');
+    const linkCall = m.calls.find((c) => c.url === link);
+    assert.ok(linkCall, 'signed link was fetched');
+    assert.equal((linkCall!.init?.headers as Record<string, string> | undefined)?.Authorization, undefined);
+  } finally {
+    m.restore();
+  }
+});
+
+test('label: a direct PDF response is accepted', async () => {
+  const m = mockFetch(() => new Response(PDF_BYTES, { status: 200, headers: { 'Content-Type': 'application/pdf' } }));
+  try {
+    const label = await adapter().generatePostageLabel('1234567890');
+    assert.equal(Buffer.from(label.base64Data, 'base64').subarray(0, 4).toString(), '%PDF');
+  } finally {
+    m.restore();
+  }
+});
+
+test('label: missing link is refused', async () => {
+  const m = labelFetch(null, () => new Response(PDF_BYTES, { status: 200 }));
+  try {
+    await assert.rejects(adapter().generatePostageLabel('1234567890'), /did not include a PDF link/);
+  } finally {
+    m.restore();
+  }
+});
+
+test('label: a link that does not return a PDF is refused, not saved as one', async () => {
+  const link = 'https://signed.example.amazonaws.com/label.pdf?X-Amz-Signature=abc';
+  const m = labelFetch(link, () => new Response('{"error":"expired"}', { status: 200 }));
+  try {
+    await assert.rejects(adapter().generatePostageLabel('1234567890'), /not a valid PDF/);
+  } finally {
+    m.restore();
+  }
+});

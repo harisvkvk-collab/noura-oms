@@ -277,17 +277,41 @@ export class DelhiveryAdapter implements DeliveryAdapter {
    * portal's "Download Document" page before relying on it. If it returns
    * JSON rather than a PDF, adjust the decoding below.
    */
+  // Observed on staging: the packing-slip endpoint answers with JSON, not a
+  // PDF. The PDF is at packages[0].pdf_download_link, a temporary signed URL
+  // on Delhivery's storage. That URL is fetched WITHOUT the API token, and
+  // nothing is logged, since the link itself grants access to the label.
   async generatePostageLabel(trackingNumber: string): Promise<PostageLabelResult> {
     const url = `${this.config.baseUrl}/api/p/packing_slip?wbns=${encodeURIComponent(trackingNumber)}&pdf=true`;
-    const res = await fetch(url, { headers: this.authHeader() });
+    const res = await fetch(url, { headers: { ...this.authHeader(), Accept: 'application/json, application/pdf' } });
 
     if (!res.ok) {
       throw new Error(`Delhivery generatePostageLabel failed: HTTP ${res.status}`);
     }
 
-    const bytes = new Uint8Array(await res.arrayBuffer());
+    let pdfBytes: Uint8Array;
+    if ((res.headers.get('content-type') ?? '').includes('application/pdf')) {
+      pdfBytes = new Uint8Array(await res.arrayBuffer());
+    } else {
+      const body = (await res.json().catch(() => null)) as { packages?: Array<{ pdf_download_link?: unknown }> } | null;
+      const link = body?.packages?.[0]?.pdf_download_link;
+      if (typeof link !== 'string' || !link.startsWith('https://')) {
+        throw new Error('Delhivery label response did not include a PDF link.');
+      }
+      const pdfRes = await fetch(link);
+      if (!pdfRes.ok) {
+        throw new Error(`Delhivery label download failed: HTTP ${pdfRes.status}`);
+      }
+      pdfBytes = new Uint8Array(await pdfRes.arrayBuffer());
+    }
+
+    // Refuse anything that isn't a PDF, so the app falls back to our own slip
+    // rather than printing or storing a broken file.
+    const isPdf = pdfBytes.length > 4 && pdfBytes[0] === 0x25 && pdfBytes[1] === 0x50 && pdfBytes[2] === 0x44 && pdfBytes[3] === 0x46;
+    if (!isPdf) throw new Error('Delhivery label is not a valid PDF.');
+
     let binary = '';
-    for (const b of bytes) binary += String.fromCharCode(b);
+    for (const b of pdfBytes) binary += String.fromCharCode(b);
 
     return {
       fileName: `${trackingNumber}.pdf`,
