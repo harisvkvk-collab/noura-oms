@@ -274,3 +274,32 @@ test('connection: network failure is reported without the token', async () => {
     globalThis.fetch = original;
   }
 });
+
+test('connection: "data does not exist" reply on staging counts as token accepted', async () => {
+  const m = mockFetch(() =>
+    json({
+      Success: false,
+      Error: 'Data does not exists for provided Waybill(s)',
+      rmk: 'Some error has occurred. Please contact client.support@delhivery.com with error message- Data does not exists for provided Waybill(s)',
+    }),
+  );
+  try {
+    const result = await adapter().testConnection();
+    assert.equal(result.ok, true);
+    assert.match(result.detail, /Token accepted/);
+    assert.ok(!result.detail.includes(TOKEN));
+  } finally {
+    m.restore();
+  }
+});
+
+test('connection: other Success:false replies are still unexpected', async () => {
+  const m = mockFetch(() => json({ Success: false, Error: 'Some other problem' }));
+  try {
+    const result = await adapter().testConnection();
+    assert.equal(result.ok, false);
+    assert.match(result.detail, /response format was not recognised/);
+  } finally {
+    m.restore();
+  }
+});

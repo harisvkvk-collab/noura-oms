@@ -137,14 +137,33 @@ export class DelhiveryAdapter implements DeliveryAdapter {
       }
       // A valid answer is a JSON object with ShipmentData, even when the list
       // is empty (an unknown waybill). Anything else is treated as unexpected.
-      const body = await res.json().catch(() => null);
+      const text = await res.text();
+      let body: unknown = null;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = null;
+      }
+      const host = new URL(this.config.baseUrl).host;
+      // Observed on staging: an unknown waybill comes back as HTTP 200 with
+      // { Success: false, Error: "Data does not exists for provided Waybill(s)" }.
+      // That is a normal answer, so the token was accepted.
+      const notFound =
+        typeof body === 'object' &&
+        body !== null &&
+        (body as { Success?: unknown }).Success === false &&
+        typeof (body as { Error?: unknown }).Error === 'string' &&
+        (body as { Error: string }).Error.includes('Data does not exists');
+      if (notFound) {
+        return { ok: true, detail: `Token accepted by ${host} (no shipment for the test waybill, as expected).` };
+      }
       if (!body || typeof body !== 'object' || !Array.isArray((body as { ShipmentData?: unknown }).ShipmentData)) {
         return { ok: false, detail: 'Delhivery answered, but the response format was not recognised.' };
       }
       const found = (body as { ShipmentData: unknown[] }).ShipmentData.length;
       return {
         ok: true,
-        detail: `Token accepted by ${new URL(this.config.baseUrl).host} (${found === 0 ? 'no shipment for the test waybill, as expected' : 'lookup returned data'}).`,
+        detail: `Token accepted by ${host} (${found === 0 ? 'no shipment for the test waybill, as expected' : 'lookup returned data'}).`,
       };
     } catch {
       return { ok: false, detail: `Could not reach ${new URL(this.config.baseUrl).host}.` };
