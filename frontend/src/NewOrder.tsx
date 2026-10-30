@@ -189,6 +189,7 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
   // Estimated Delhivery charge for the customer's default pincode (500 g,
   // prepaid). Information only: the courier's rate applies at booking.
   const [shippingEstimate, setShippingEstimate] = useState<{ amount: number; error?: string } | null>(null);
+  const [shippingMode, setShippingMode] = useState<'Surface' | 'Express'>('Surface');
   useEffect(() => {
     setShippingEstimate(null);
     if (!courierId || !customerId || selectedCourier?.api_provider !== 'delhivery') return;
@@ -207,7 +208,7 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
       try {
         const result = await callEdgeFunction<{ ok: boolean; totalAmount?: number; error?: string }>(
           'estimate-shipping-cost',
-          { courierId, destinationPincode: address.zip_code },
+          { courierId, destinationPincode: address.zip_code, shippingMode },
         );
         if (cancelled) return;
         setShippingEstimate(result.ok ? { amount: result.totalAmount ?? 0 } : { amount: 0, error: result.error });
@@ -218,7 +219,7 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
     return () => {
       cancelled = true;
     };
-  }, [courierId, customerId, selectedCourier?.api_provider]);
+  }, [courierId, customerId, selectedCourier?.api_provider, shippingMode]);
 
   async function resolveCustomerCountry(id: string) {
     const { data } = await supabase
@@ -423,6 +424,7 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
             courier_id: courierId,
             cost: deliveryFee,
             manual_courier_name: isGenericCourier ? manualCourierName.trim() || null : null,
+            shipping_mode: selectedCourier?.api_provider === 'delhivery' ? shippingMode : 'Surface',
             pickup_location_id: pickupLocationId,
             currency_code: currencyCode,
             status: 'pending',
@@ -732,11 +734,22 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
                   className="mt-1.5"
                 />
               )}
+              {selectedCourier?.api_provider === 'delhivery' && (
+                <Select value={shippingMode} onValueChange={(v) => setShippingMode(v as 'Surface' | 'Express')}>
+                  <SelectTrigger className="mt-1.5">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Surface">Surface (standard)</SelectItem>
+                    <SelectItem value="Express">Express</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
               {shippingEstimate && (
                 <p className="text-xs text-muted-foreground">
                   {shippingEstimate.error
                     ? `Delhivery estimate unavailable: ${shippingEstimate.error}`
-                    : `Estimated Delhivery charge: ₹${shippingEstimate.amount.toFixed(2)} (0.5 kg, prepaid). Estimate only.`}
+                    : `Estimated Delhivery charge: ₹${shippingEstimate.amount.toFixed(2)} (0.5 kg, prepaid, ${shippingMode}). Estimate only.`}
                 </p>
               )}
             </div>

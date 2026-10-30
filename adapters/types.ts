@@ -27,6 +27,7 @@ export interface CreateShipmentInput {
   currencyCode?: string;
   codAmount?: number;            // omit / 0 for non-COD orders
   receiverPostalCode?: string;   // required by Delhivery (6-digit Indian pincode)
+  shippingMode?: 'Surface' | 'Express'; // Delhivery; defaults to Surface when omitted
   receiverState?: string;        // Delhivery
   invoiceValue?: number;         // goods value, Delhivery total_amount
 

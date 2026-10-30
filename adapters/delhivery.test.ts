@@ -258,6 +258,25 @@ test('cost estimate: sends surface prepaid parameters and returns the total', as
   }
 });
 
+test('express: the booking payload and the estimate both use Express', async () => {
+  const m = mockFetch((call) =>
+    call.url.includes('/api/cmu/create.json')
+      ? json({ success: true, packages: [{ waybill: '1234567890', status: 'Manifested' }] })
+      : json([{ total_amount: 45.1 }]),
+  );
+  try {
+    await adapter().createShipment({ ...validInput, shippingMode: 'Express' });
+    const sent = new URLSearchParams(String(m.calls[0].init.body)).get('data');
+    assert.equal(JSON.parse(sent!).shipments[0].shipping_mode, 'Express');
+
+    const estimate = await adapter().estimateCost!({ originPincode: '679585', destinationPincode: '680005', weightKg: 0.5, shippingMode: 'Express' });
+    assert.equal(estimate.totalAmount, 45.1);
+    assert.equal(new URL(m.calls[1].url).searchParams.get('md'), 'E');
+  } finally {
+    m.restore();
+  }
+});
+
 test('cost estimate: a response without an amount is an error, not a zero charge', async () => {
   const m = mockFetch(() => json({ error: 'Unable to process request for provided o_pin' }));
   try {

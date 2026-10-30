@@ -201,9 +201,10 @@ export class DelhiveryAdapter implements DeliveryAdapter {
     originPincode: string;
     destinationPincode: string;
     weightKg: number;
+    shippingMode?: 'Surface' | 'Express';
   }): Promise<{ totalAmount: number; currency: 'INR' }> {
     const params = new URLSearchParams({
-      md: 'S',
+      md: input.shippingMode === 'Express' ? 'E' : 'S',
       ss: 'Delivered',
       o_pin: input.originPincode,
       d_pin: input.destinationPincode,
@@ -273,7 +274,7 @@ export class DelhiveryAdapter implements DeliveryAdapter {
           products_desc: input.itemDescription ?? '',
           quantity: String(input.pieces ?? 1),
           weight: String((input.weightKg ?? 0.5) * 1000), // Delhivery takes grams
-          shipping_mode: 'Surface',
+          shipping_mode: input.shippingMode === 'Express' ? 'Express' : 'Surface',
           address_type: 'home',
           // waybill intentionally omitted: Delhivery auto-generates and returns it
         },

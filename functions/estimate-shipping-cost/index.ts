@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { courierId, destinationPincode, weightKg } = await req.json();
+    const { courierId, destinationPincode, weightKg, shippingMode } = await req.json();
     if (!courierId) return json({ ok: false, error: 'courierId is required.' });
     if (!/^\d{6}$/.test(destinationPincode ?? '')) {
       return json({ ok: false, error: 'A 6-digit destination pincode is required.' });
@@ -61,6 +61,7 @@ Deno.serve(async (req) => {
       originPincode,
       destinationPincode,
       weightKg: weight,
+      shippingMode: shippingMode === 'Express' ? 'Express' : 'Surface',
     });
     return json({ ok: true, ...estimate });
   } catch (err) {

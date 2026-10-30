@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
     const { data: leg, error: legError } = await supabase
       .from('shipment_legs')
       .select(
-        'id, shipment_id, courier_id, currency_code, pickup_location_id, tracking_number, couriers(name, api_provider, integration_status, api_environment)',
+        'id, shipment_id, courier_id, currency_code, pickup_location_id, tracking_number, shipping_mode, couriers(name, api_provider, integration_status, api_environment)',
       )
       .eq('id', shipmentLegId)
       .maybeSingle();
@@ -197,6 +197,7 @@ Deno.serve(async (req) => {
       codAmount: order.payment_method === 'cod' ? Number(order.total) : undefined,
       shipFrom,
       receiverPostalCode: address.zip_code ?? undefined,
+      shippingMode: leg.shipping_mode === 'Express' ? 'Express' : 'Surface',
       receiverState: address.state ?? undefined,
       invoiceValue: isDelhivery ? Number(order.total) : undefined,
     };
