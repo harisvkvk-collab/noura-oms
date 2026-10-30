@@ -47,7 +47,11 @@ interface DelhiveryConfig {
 // Delhivery's own docs recommend NOT exposing their granular NSL sub-codes,
 // and building a simplified mapping instead. The raw status is still stored
 // in shipment_legs.provider_status_raw for support calls.
-function mapDelhiveryStatus(statusType: string, status: string): SimplifiedStatus {
+function mapDelhiveryStatus(statusType: string, status: string, instructions = ''): SimplifiedStatus {
+  // A cancelled shipment keeps its status (e.g. Manifested/UD); only the note
+  // changes. A cancelled in-transit parcel is RT and is still coming back, so
+  // it is not closed here (the final "DL RTO" closes it).
+  if (statusType.toUpperCase() !== 'RT' && /cancel/i.test(instructions)) return 'cancelled';
   const s = `${statusType} ${status}`.trim().toLowerCase();
   if (s.includes('delivered') && !s.includes('rto')) return 'delivered';
   if (s.includes('rto') || s.includes('dto') || s.includes('return')) return 'failed_rto';
@@ -170,6 +174,82 @@ export class DelhiveryAdapter implements DeliveryAdapter {
     }
   }
 
+  // Shipment Cancellation (developer portal). Allowed only while the shipment
+  // is Manifested, In Transit or Pending. Manifested cancels stay UD; an
+  // in-transit cancel becomes RT (return to origin), so the parcel still comes back.
+  async cancelShipment(trackingNumber: string): Promise<{ detail: string }> {
+    const res = await fetch(`${this.config.baseUrl}/api/p/edit`, {
+      method: 'POST',
+      headers: { ...this.authHeader(), Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ waybill: trackingNumber, cancellation: 'true' }),
+    });
+    if (!res.ok) {
+      throw new Error(`Delhivery cancellation failed: HTTP ${res.status}`);
+    }
+    const body = (await res.json().catch(() => null)) as { status?: unknown; remark?: unknown } | null;
+    if (body?.status !== true) {
+      const remark = typeof body?.remark === 'string' ? body.remark : 'no reason given';
+      throw new Error(`Delhivery did not cancel the shipment: ${remark}`);
+    }
+    return { detail: typeof body.remark === 'string' ? body.remark : 'Shipment has been cancelled.' };
+  }
+
+  // Calculate Shipping Cost (developer portal). Surface, prepaid, delivered
+  // status. The API returns a list; the first entry carries total_amount
+  // (INR, including tax). Estimates only: Delhivery says rates may change.
+  async estimateCost(input: {
+    originPincode: string;
+    destinationPincode: string;
+    weightKg: number;
+  }): Promise<{ totalAmount: number; currency: 'INR' }> {
+    const params = new URLSearchParams({
+      md: 'S',
+      ss: 'Delivered',
+      o_pin: input.originPincode,
+      d_pin: input.destinationPincode,
+      cgm: String(Math.round(input.weightKg * 1000)),
+      pt: 'Pre-paid',
+    });
+    const res = await fetch(`${this.config.baseUrl}/api/kinko/v1/invoice/charges/.json?${params}`, {
+      headers: { ...this.authHeader(), Accept: 'application/json' },
+    });
+    if (!res.ok) {
+      throw new Error(`Delhivery cost estimate failed: HTTP ${res.status}`);
+    }
+    const body = (await res.json().catch(() => null)) as Array<{ total_amount?: unknown }> | null;
+    const total = Array.isArray(body) ? Number(body[0]?.total_amount) : NaN;
+    if (!Number.isFinite(total)) {
+      throw new Error('Delhivery cost estimate returned no amount.');
+    }
+    return { totalAmount: total, currency: 'INR' };
+  }
+
+  // Pincode Serviceability (developer portal). An empty delivery_codes list
+  // means the pincode is non-serviceable (NSZ). A remark of "Embargo" is a
+  // temporary NSZ. Bookings are prepaid only, so pre_paid must be "Y".
+  async checkServiceability(pincode: string): Promise<{ serviceable: boolean; detail: string }> {
+    const url = `${this.config.baseUrl}/c/api/pin-codes/json/?filter_codes=${encodeURIComponent(pincode)}`;
+    const res = await fetch(url, { headers: { ...this.authHeader(), Accept: 'application/json' } });
+    if (!res.ok) {
+      throw new Error(`Delhivery pincode check failed: HTTP ${res.status}`);
+    }
+    const body = (await res.json().catch(() => {
+      throw new Error('Delhivery pincode check returned a non-JSON response.');
+    })) as { delivery_codes?: Array<{ postal_code?: { pre_paid?: string; remarks?: string } }> };
+
+    const entry = body.delivery_codes?.[0]?.postal_code;
+    if (!entry) {
+      return { serviceable: false, detail: `Delhivery does not deliver to pincode ${pincode} (NSZ).` };
+    }
+    if (entry.remarks?.toLowerCase().includes('embargo')) {
+      return { serviceable: false, detail: `Delhivery has paused deliveries to pincode ${pincode} (embargo).` };
+    }
+    if (entry.pre_paid !== 'Y') {
+      return { serviceable: false, detail: `Delhivery does not accept prepaid orders for pincode ${pincode}.` };
+    }
+    return { serviceable: true, detail: `Pincode ${pincode} is serviceable for prepaid.` };
+  }
+
   async createShipment(input: CreateShipmentInput): Promise<CreateShipmentResult> {
     const problem = validateDelhiveryShipment(input, this.config.pickupLocation);
     if (problem) throw new Error(`Delhivery booking not sent: ${problem}`);
@@ -262,7 +342,7 @@ export class DelhiveryAdapter implements DeliveryAdapter {
     return {
       trackingNumber,
       referenceNumber: shipment.ReferenceNo,
-      simplifiedStatus: mapDelhiveryStatus(statusType, status),
+      simplifiedStatus: mapDelhiveryStatus(statusType, status, shipment.Status?.Instructions ?? ''),
       rawStatus: `${statusType}/${status}`,
       statusDetails: shipment.Status?.Instructions,
       statusDatetime: shipment.Status?.StatusDateTime ?? new Date().toISOString(),

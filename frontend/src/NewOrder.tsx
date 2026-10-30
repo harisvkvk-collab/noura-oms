@@ -186,6 +186,40 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
   const selectedCourier = couriers.find((c) => c.id === courierId);
   const isGenericCourier = isGenericCourierName(selectedCourier?.name);
 
+  // Estimated Delhivery charge for the customer's default pincode (500 g,
+  // prepaid). Information only: the courier's rate applies at booking.
+  const [shippingEstimate, setShippingEstimate] = useState<{ amount: number; error?: string } | null>(null);
+  useEffect(() => {
+    setShippingEstimate(null);
+    if (!courierId || !customerId || selectedCourier?.api_provider !== 'delhivery') return;
+    let cancelled = false;
+    (async () => {
+      const { data: address } = await supabase
+        .from('customer_addresses')
+        .select('zip_code')
+        .eq('customer_id', customerId)
+        .eq('is_default', true)
+        .maybeSingle();
+      if (!address?.zip_code) {
+        if (!cancelled) setShippingEstimate({ amount: 0, error: 'the customer has no default pincode.' });
+        return;
+      }
+      try {
+        const result = await callEdgeFunction<{ ok: boolean; totalAmount?: number; error?: string }>(
+          'estimate-shipping-cost',
+          { courierId, destinationPincode: address.zip_code },
+        );
+        if (cancelled) return;
+        setShippingEstimate(result.ok ? { amount: result.totalAmount ?? 0 } : { amount: 0, error: result.error });
+      } catch {
+        if (!cancelled) setShippingEstimate({ amount: 0, error: 'could not load the estimate.' });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [courierId, customerId, selectedCourier?.api_provider]);
+
   async function resolveCustomerCountry(id: string) {
     const { data } = await supabase
       .from('customer_addresses')
@@ -697,6 +731,13 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
                   placeholder="Courier company name"
                   className="mt-1.5"
                 />
+              )}
+              {shippingEstimate && (
+                <p className="text-xs text-muted-foreground">
+                  {shippingEstimate.error
+                    ? `Delhivery estimate unavailable: ${shippingEstimate.error}`
+                    : `Estimated Delhivery charge: ₹${shippingEstimate.amount.toFixed(2)} (0.5 kg, prepaid). Estimate only.`}
+                </p>
               )}
             </div>
           )}

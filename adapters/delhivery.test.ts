@@ -152,6 +152,155 @@ test('testConnection: 401 fails without leaking the token', async () => {
   }
 });
 
+test('serviceability: an empty list means NSZ and the pincode is refused', async () => {
+  const m = mockFetch(() => json({ delivery_codes: [] }));
+  try {
+    const result = await adapter().checkServiceability!('679585');
+    assert.equal(result.serviceable, false);
+    assert.match(result.detail, /NSZ/);
+    assert.match(m.calls[0].url, /\/c\/api\/pin-codes\/json\/\?filter_codes=679585$/);
+  } finally {
+    m.restore();
+  }
+});
+
+test('serviceability: a prepaid-enabled pincode is accepted', async () => {
+  const m = mockFetch(() => json({ delivery_codes: [{ postal_code: { pin: 680005, pre_paid: 'Y', cod: 'Y', remarks: '' } }] }));
+  try {
+    const result = await adapter().checkServiceability!('680005');
+    assert.equal(result.serviceable, true);
+  } finally {
+    m.restore();
+  }
+});
+
+test('serviceability: an embargoed pincode is refused even when listed', async () => {
+  const m = mockFetch(() => json({ delivery_codes: [{ postal_code: { pin: 680005, pre_paid: 'Y', remarks: 'Embargo' } }] }));
+  try {
+    const result = await adapter().checkServiceability!('680005');
+    assert.equal(result.serviceable, false);
+    assert.match(result.detail, /embargo/);
+  } finally {
+    m.restore();
+  }
+});
+
+test('serviceability: a pincode without prepaid is refused', async () => {
+  const m = mockFetch(() => json({ delivery_codes: [{ postal_code: { pin: 680005, pre_paid: 'N', remarks: '' } }] }));
+  try {
+    const result = await adapter().checkServiceability!('680005');
+    assert.equal(result.serviceable, false);
+    assert.match(result.detail, /prepaid/);
+  } finally {
+    m.restore();
+  }
+});
+
+test('serviceability: an HTTP error throws rather than approving the pincode', async () => {
+  const m = mockFetch(() => new Response('', { status: 503 }));
+  try {
+    await assert.rejects(adapter().checkServiceability!('680005'), /HTTP 503/);
+  } finally {
+    m.restore();
+  }
+});
+
+test('tracking: a cancelled manifested waybill maps to cancelled, not pending', async () => {
+  const m = mockFetch(() =>
+    json({ ShipmentData: [{ Shipment: { Status: { Status: 'Manifested', StatusType: 'UD', Instructions: 'Seller cancelled the order' } } }] }),
+  );
+  try {
+    const result = await adapter().trackShipment('86589610000011');
+    assert.equal(result.simplifiedStatus, 'cancelled');
+  } finally {
+    m.restore();
+  }
+});
+
+test('tracking: a parcel on its way back (RT) stays open as in_transit', async () => {
+  const m = mockFetch(() =>
+    json({ ShipmentData: [{ Shipment: { Status: { Status: 'In Transit', StatusType: 'RT', Instructions: 'Seller cancelled the order' } } }] }),
+  );
+  try {
+    const result = await adapter().trackShipment('86589610000011');
+    assert.equal(result.simplifiedStatus, 'in_transit');
+  } finally {
+    m.restore();
+  }
+});
+
+test('tracking: the final returned-to-origin status (DL RTO) closes as failed_rto', async () => {
+  const m = mockFetch(() =>
+    json({ ShipmentData: [{ Shipment: { Status: { Status: 'RTO', StatusType: 'DL', Instructions: 'Returned to origin' } } }] }),
+  );
+  try {
+    const result = await adapter().trackShipment('86589610000011');
+    assert.equal(result.simplifiedStatus, 'failed_rto');
+  } finally {
+    m.restore();
+  }
+});
+
+test('cost estimate: sends surface prepaid parameters and returns the total', async () => {
+  const m = mockFetch(() => json([{ status: 'Delivered', charged_weight: 500, total_amount: 42.74 }]));
+  try {
+    const result = await adapter().estimateCost!({ originPincode: '679585', destinationPincode: '680005', weightKg: 0.5 });
+    assert.deepEqual(result, { totalAmount: 42.74, currency: 'INR' });
+    const url = new URL(m.calls[0].url);
+    assert.equal(url.pathname, '/api/kinko/v1/invoice/charges/.json');
+    assert.equal(url.searchParams.get('md'), 'S');
+    assert.equal(url.searchParams.get('o_pin'), '679585');
+    assert.equal(url.searchParams.get('d_pin'), '680005');
+    assert.equal(url.searchParams.get('cgm'), '500');
+    assert.equal(url.searchParams.get('pt'), 'Pre-paid');
+  } finally {
+    m.restore();
+  }
+});
+
+test('cost estimate: a response without an amount is an error, not a zero charge', async () => {
+  const m = mockFetch(() => json({ error: 'Unable to process request for provided o_pin' }));
+  try {
+    await assert.rejects(
+      adapter().estimateCost!({ originPincode: '679585', destinationPincode: '680005', weightKg: 0.5 }),
+      /returned no amount/,
+    );
+  } finally {
+    m.restore();
+  }
+});
+
+test('cancel: sends the cancellation flag for the waybill and reports success', async () => {
+  const m = mockFetch(() => json({ status: true, waybill: '86589610000011', order_id: '#1014', remark: 'Shipment has been cancelled.' }));
+  try {
+    const result = await adapter().cancelShipment!('86589610000011');
+    assert.equal(result.detail, 'Shipment has been cancelled.');
+    assert.equal(m.calls[0].url, `${BASE}/api/p/edit`);
+    assert.equal(m.calls[0].init.method, 'POST');
+    assert.deepEqual(JSON.parse(String(m.calls[0].init.body)), { waybill: '86589610000011', cancellation: 'true' });
+  } finally {
+    m.restore();
+  }
+});
+
+test('cancel: Delhivery refusing the cancel is an error with its reason', async () => {
+  const m = mockFetch(() => json({ status: false, remark: 'Shipment is already dispatched.' }));
+  try {
+    await assert.rejects(adapter().cancelShipment!('86589610000011'), /already dispatched/);
+  } finally {
+    m.restore();
+  }
+});
+
+test('cancel: an HTTP error is an error, not a silent success', async () => {
+  const m = mockFetch(() => new Response('', { status: 500 }));
+  try {
+    await assert.rejects(adapter().cancelShipment!('86589610000011'), /HTTP 500/);
+  } finally {
+    m.restore();
+  }
+});
+
 test('buildDelhiveryConfig uses the documented default host and requires a warehouse', () => {
   const config = buildDelhiveryConfig({ apiToken: TOKEN, baseUrl: null, pickupLocation: 'WH' }, 'staging');
   assert.equal(config.baseUrl, 'https://staging-express.delhivery.com');

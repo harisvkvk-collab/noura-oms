@@ -48,12 +48,17 @@ Deno.serve(async (req) => {
     const { data: leg, error: legError } = await supabase
       .from('shipment_legs')
       .select(
-        'id, shipment_id, courier_id, currency_code, pickup_location_id, couriers(name, api_provider, integration_status, api_environment)',
+        'id, shipment_id, courier_id, currency_code, pickup_location_id, tracking_number, couriers(name, api_provider, integration_status, api_environment)',
       )
       .eq('id', shipmentLegId)
       .maybeSingle();
     if (legError) throw legError;
     if (!leg) return json({ ok: false, error: 'Shipment leg not found.' });
+    // A leg that already has a waybill was booked before. Booking it again
+    // would create a second shipment for the same order at the courier.
+    if (leg.tracking_number) {
+      return json({ ok: false, error: `This shipment is already booked (tracking ${leg.tracking_number}).` });
+    }
 
     // couriers(...) is embedded as an array by the untyped client regardless
     // of the true one-to-one cardinality here (same gotcha as the frontend
@@ -116,6 +121,11 @@ Deno.serve(async (req) => {
       // declares the goods value — which has to be in INR for an Indian order.
       if (order.currency_code !== 'INR') {
         return json({ ok: false, error: `Delhivery bookings need an INR order (this one is ${order.currency_code}).` });
+      }
+      // Goods above Rs 50,000 need an e-way bill, which the app does not capture
+      // yet. Refuse here rather than book a shipment that is non-compliant.
+      if (Number(order.total) > 50000) {
+        return json({ ok: false, error: 'Orders above ₹50,000 need an e-way bill, which this app does not capture yet. Book this one in the Delhivery dashboard.' });
       }
     }
 
@@ -191,12 +201,23 @@ Deno.serve(async (req) => {
       invoiceValue: isDelhivery ? Number(order.total) : undefined,
     };
 
+    // Confirm the courier delivers to this pincode before creating anything.
+    // If the check itself fails, the error below blocks the booking so staff
+    // can retry; nothing is created at the courier.
+    if (adapter.checkServiceability) {
+      const check = await adapter.checkServiceability(address.zip_code ?? '');
+      if (!check.serviceable) return json({ ok: false, error: check.detail });
+    }
+
     const result = await adapter.createShipment(input);
 
     const { error: updateError } = await supabase
       .from('shipment_legs')
       .update({
         tracking_number: result.trackingNumber,
+        // Remember which Delhivery environment booked this, so refresh and
+        // cancel use the same one even after the courier's setting changes.
+        courier_environment: courier.api_environment === 'staging' ? 'staging' : 'production',
         provider_status_raw: result.rawStatus,
         is_manual: false,
         updated_at: new Date().toISOString(),

@@ -73,6 +73,7 @@ type ShipmentLeg = {
   courier_id: string;
   cost: number | null;
   tracking_number: string | null;
+  status: string;
   courierIntegrated: boolean;
   courierProvider: string | null;
   courierWhatsappNumber: string | null;
@@ -115,7 +116,7 @@ async function fetchOrderDetail(orderId: string) {
       .order('created_at', { ascending: true }),
     supabase
       .from('shipments')
-      .select('shipment_legs(id, courier_id, cost, tracking_number, manual_courier_name, pickup_location_id, couriers(name, api_provider, api_environment, integration_status, whatsapp_number))')
+      .select('shipment_legs(id, courier_id, cost, tracking_number, status, manual_courier_name, pickup_location_id, couriers(name, api_provider, api_environment, integration_status, whatsapp_number))')
       .eq('order_id', orderId)
       .is('return_id', null)
       .maybeSingle(),
@@ -211,6 +212,7 @@ async function fetchOrderDetail(orderId: string) {
         courier_id: firstLeg.courier_id,
         cost: firstLeg.cost == null ? null : Number(firstLeg.cost),
         tracking_number: firstLeg.tracking_number,
+        status: firstLeg.status,
         courierIntegrated: legCourier ? isAutoBookingEnabled(legCourier) : false,
         courierProvider: legCourier?.api_provider ?? null,
         courierWhatsappNumber: legCourier?.whatsapp_number ?? null,
@@ -342,6 +344,7 @@ export function OrderDetail({
   const [showPrintSlipModal, setShowPrintSlipModal] = useState(false);
   const [retryingBooking, setRetryingBooking] = useState(false);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
+  const [cancellingCourier, setCancellingCourier] = useState(false);
   const [reprintingLabel, setReprintingLabel] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -613,6 +616,27 @@ export function OrderDetail({
     }
   }
 
+  // Cancels the booking at Delhivery. Only possible before pickup; the server
+  // checks the status again and Delhivery applies its own rules.
+  async function handleCancelCourierShipment() {
+    if (!shipmentLeg) return;
+    if (!window.confirm('Cancel this shipment at Delhivery? The courier will not collect it.')) return;
+    setCancellingCourier(true);
+    setError(null);
+    try {
+      const result = await callEdgeFunction<{ ok: boolean; detail?: string; error?: string }>(
+        'cancel-courier-shipment',
+        { shipmentLegId: shipmentLeg.id },
+      );
+      if (!result.ok) throw new Error(result.error ?? 'Cancellation failed.');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to cancel the shipment.');
+    } finally {
+      setCancellingCourier(false);
+    }
+  }
+
   // Open WhatsApp with a pre-filled message for the courier — purely
   // optional convenience, not required to progress the order.
   // Mobile browsers only let a new tab open inside the tap itself, so the tab
@@ -796,6 +820,20 @@ export function OrderDetail({
                 {refreshingStatus ? 'Refreshing…' : 'Refresh status'}
               </Button>
             )}
+            {shipmentLeg?.courierProvider === 'delhivery' &&
+              shipmentLeg?.tracking_number &&
+              ['pending', 'in_transit'].includes(shipmentLeg.status) && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="text-red-600"
+                  disabled={cancellingCourier}
+                  onClick={handleCancelCourierShipment}
+                >
+                  {cancellingCourier ? 'Cancelling…' : 'Cancel with courier'}
+                </Button>
+              )}
             {shipmentLeg?.courierIntegrated && shipmentLeg?.tracking_number && (
               <Button
                 type="button"

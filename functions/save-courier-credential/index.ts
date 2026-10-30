@@ -101,6 +101,9 @@ Deno.serve(async (req) => {
         if (!parsed || parsed.protocol !== 'https:') {
           return json({ ok: false, error: 'Base URL must be a full https:// address.' }, 400);
         }
+        // A trailing dot on the host ("delhivery.com.") is a valid DNS form but
+        // not what the courier documents, so store the plain origin.
+        parsed.hostname = parsed.hostname.replace(/\.$/, '');
         row.base_url = parsed.origin;
       }
     }

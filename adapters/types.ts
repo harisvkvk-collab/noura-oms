@@ -8,7 +8,8 @@ export type SimplifiedStatus =
   | 'in_transit'
   | 'out_for_delivery'
   | 'delivered'
-  | 'failed_rto';
+  | 'failed_rto'
+  | 'cancelled';
 
 export interface CreateShipmentInput {
   orderId: string;               // our internal order id, sent as reference_number where supported
@@ -74,6 +75,21 @@ export interface DeliveryAdapter {
   // "Test connection" button. Must never create or modify anything real.
   // Optional: callers say so plainly if an adapter doesn't provide one.
   testConnection?(): Promise<{ ok: boolean; detail: string }>;
+
+  // Checks that the courier delivers to a destination pincode, before any
+  // shipment is created. Couriers without a check skip this step.
+  checkServiceability?(pincode: string): Promise<{ serviceable: boolean; detail: string }>;
+
+  // Cancels a booked shipment at the courier (only allowed before pickup).
+  cancelShipment?(trackingNumber: string): Promise<{ detail: string }>;
+
+  // Estimated shipping charge for a prepaid parcel. Approximate; the courier
+  // may change its rates, so it is only shown to staff before booking.
+  estimateCost?(input: {
+    originPincode: string;
+    destinationPincode: string;
+    weightKg: number;
+  }): Promise<{ totalAmount: number; currency: 'INR' }>;
 
   // Not every courier exposes a pull-based tracking endpoint (NextDrop relies
   // on webhook push instead) — adapters that don't support this should throw

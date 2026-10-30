@@ -22,13 +22,14 @@ const supabase = createClient(
 );
 
 // Legs in these states are finished; the daily batch skips them.
-const CLOSED_STATUSES = ['delivered', 'failed_rto'];
+const CLOSED_STATUSES = ['delivered', 'failed_rto', 'cancelled'];
 
 type LegRow = {
   id: string;
   shipment_id: string;
   tracking_number: string | null;
   status: string;
+  courier_environment: string | null;
   couriers: { name: string; api_provider: string | null; integration_status: string; api_environment: string | null } | { name: string; api_provider: string | null; integration_status: string; api_environment: string | null }[] | null;
 };
 
@@ -47,7 +48,7 @@ Deno.serve(async (req) => {
     if (shipmentLegId) {
       const { data: leg, error } = await supabase
         .from('shipment_legs')
-        .select('id, shipment_id, tracking_number, status, couriers(name, api_provider, integration_status, api_environment)')
+        .select('id, shipment_id, tracking_number, status, courier_environment, couriers(name, api_provider, integration_status, api_environment)')
         .eq('id', shipmentLegId)
         .maybeSingle();
       if (error) throw error;
@@ -59,7 +60,7 @@ Deno.serve(async (req) => {
     // Batch: only legs that have a tracking number and aren't finished yet.
     const { data: legs, error: legsError } = await supabase
       .from('shipment_legs')
-      .select('id, shipment_id, tracking_number, status, couriers(name, api_provider, integration_status, api_environment)')
+      .select('id, shipment_id, tracking_number, status, courier_environment, couriers(name, api_provider, integration_status, api_environment)')
       .not('tracking_number', 'is', null);
     if (legsError) throw legsError;
 
@@ -93,8 +94,11 @@ async function refreshLeg(leg: LegRow): Promise<{ ok: boolean; status?: string; 
   if (!courier) return { ok: false, detail: 'Courier not found for this leg.' };
   if (!leg.tracking_number) return { ok: false, detail: 'No tracking number on this leg yet.' };
 
-  const adapter = await getAdapterForCourier(supabase, courier);
-  if (!adapter) return { ok: false, detail: `No active ${courier.api_environment === 'staging' ? 'staging' : 'production'} API credentials on file for ${courier.name}.` };
+  // The leg's own environment wins: a staging booking must never be tracked
+  // against production, even after the courier is switched to production.
+  const environment = leg.courier_environment ?? (courier.api_environment === 'staging' ? 'staging' : 'production');
+  const adapter = await getAdapterForCourier(supabase, { ...courier, api_environment: environment });
+  if (!adapter) return { ok: false, detail: `No active ${environment} API credentials on file for ${courier.name}.` };
   if (!adapter.trackShipment) return { ok: false, detail: `${courier.name} doesn't support status tracking.` };
 
   const update = await adapter.trackShipment(leg.tracking_number);
