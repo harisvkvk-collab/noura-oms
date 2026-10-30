@@ -615,8 +615,12 @@ export function OrderDetail({
 
   // Open WhatsApp with a pre-filled message for the courier — purely
   // optional convenience, not required to progress the order.
+  // Mobile browsers only let a new tab open inside the tap itself, so the tab
+  // is opened synchronously here and pointed at WhatsApp after the template
+  // loads (a window.open after an await is treated as a blocked pop-up).
   async function handleSendCourierWhatsApp() {
     if (!order || !shipmentLeg || !shipmentLeg.courierWhatsappNumber) return;
+    const tab = window.open('about:blank', '_blank');
     setSendingCourierWhatsApp(true);
     try {
       const { data: settings } = await supabase
@@ -626,7 +630,10 @@ export function OrderDetail({
       const template = settings?.whatsapp_courier_template;
       const message = buildCourierWhatsAppMessage(order, items, shipmentLeg, template);
       const whatsappNum = shipmentLeg.courierWhatsappNumber.replace(/\D/g, '');
-      window.open(`https://wa.me/${whatsappNum}?text=${encodeURIComponent(message)}`, '_blank');
+      openWhatsAppTab(tab, whatsappNum, message);
+    } catch (err) {
+      tab?.close();
+      setError(err instanceof Error ? err.message : 'Failed to open WhatsApp.');
     } finally {
       setSendingCourierWhatsApp(false);
     }
@@ -635,6 +642,9 @@ export function OrderDetail({
   // Send WhatsApp confirmation to customer
   async function handleSendCustomerWhatsApp() {
     if (!order) return;
+    const customerPhone = order.customer_phone?.replace(/\D/g, '');
+    if (!customerPhone) return;
+    const tab = window.open('about:blank', '_blank');
     setSendingCustomerWhatsApp(true);
     try {
       const { data: settings } = await supabase
@@ -643,12 +653,21 @@ export function OrderDetail({
         .maybeSingle();
       const template = settings?.whatsapp_customer_template;
       const message = buildConfirmationMessage(order, items, template);
-      const customerPhone = order.customer_phone?.replace(/\D/g, '');
-      if (customerPhone) {
-        window.open(`https://wa.me/${customerPhone}?text=${encodeURIComponent(message)}`, '_blank');
-      }
+      openWhatsAppTab(tab, customerPhone, message);
+    } catch (err) {
+      tab?.close();
+      setError(err instanceof Error ? err.message : 'Failed to open WhatsApp.');
     } finally {
       setSendingCustomerWhatsApp(false);
+    }
+  }
+
+  function openWhatsAppTab(tab: Window | null, phone: string, message: string) {
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    if (tab) {
+      tab.location.href = url;
+    } else {
+      setError('Your browser blocked the WhatsApp tab. Allow pop-ups for this site and try again.');
     }
   }
 
