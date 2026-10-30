@@ -702,11 +702,29 @@ export function OrderDetail({
   // in Deliveries etc.; it does NOT reach out to the courier. The dialog
   // says so explicitly whenever a tracking number already exists, since
   // that's the case staff most need reminding to also handle manually.
+  const CANCELLABLE_LEG_STATUSES = ['pending', 'in_transit'];
+  // A Delhivery booking that is still open at the courier.
+  const delhiveryBooked =
+    shipmentLeg?.courierProvider === 'delhivery' && !!shipmentLeg.tracking_number && shipmentLeg.status !== 'cancelled';
+
   async function handleCancelOrder() {
     if (!order) return;
     setCancelling(true);
     setError(null);
     try {
+      // A Delhivery booking is cancelled at Delhivery first. If Delhivery refuses
+      // (for example, the parcel is already dispatched), the order stays open.
+      if (delhiveryBooked && shipmentLeg) {
+        if (!CANCELLABLE_LEG_STATUSES.includes(shipmentLeg.status)) {
+          throw new Error(`The Delhivery shipment is ${shipmentLeg.status} and can't be cancelled. Resolve it with Delhivery first.`);
+        }
+        const result = await callEdgeFunction<{ ok: boolean; error?: string }>(
+          'cancel-courier-shipment',
+          { shipmentLegId: shipmentLeg.id },
+        );
+        if (!result.ok) throw new Error(result.error ?? 'Delhivery did not cancel the shipment, so the order is still open.');
+      }
+
       const { error: updateError } = await supabase
         .from('orders')
         .update({ status: 'cancelled', updated_at: new Date().toISOString() })
@@ -718,7 +736,9 @@ export function OrderDetail({
         .insert({ order_id: order.id, step: 'cancelled', staff_user_id: staffId });
       if (timelineError) throw timelineError;
 
-      if (shipmentLeg) {
+      // The cancel function already set the leg from Delhivery's answer (an
+      // in-transit return stays open), so only other legs are marked here.
+      if (shipmentLeg && !delhiveryBooked) {
         const { error: legError } = await supabase
           .from('shipment_legs')
           .update({ status: 'cancelled', updated_at: new Date().toISOString() })
@@ -765,9 +785,9 @@ export function OrderDetail({
               <OrderStatusBadge status={order.status} />
             </div>
             <p className="text-sm text-muted-foreground">
-              This order was cancelled — an internal record only.
-              {shipmentLeg?.tracking_number
-                ? ` It had a courier booking on file (${shipmentLeg.tracking_number}${courierName ? ` via ${courierName}` : ''}) — if that hasn't been cancelled with the courier directly yet, do that separately in their portal.`
+              This order was cancelled.
+              {shipmentLeg?.tracking_number && shipmentLeg.status !== 'cancelled'
+                ? ` Its courier booking (${shipmentLeg.tracking_number}${courierName ? ` via ${courierName}` : ''}) is still open — check it with the courier.`
                 : ''}
             </p>
           </CardContent>
@@ -899,9 +919,11 @@ export function OrderDetail({
           <DialogHeader>
             <DialogTitle>Cancel {order.order_number}?</DialogTitle>
             <DialogDescription>
-              This only marks the order cancelled in our own system — it does not contact the courier.
-              {shipmentLeg?.tracking_number
-                ? ` This order already has a courier booking (${shipmentLeg.tracking_number}${courierName ? ` via ${courierName}` : ''}) — you'll still need to cancel that separately in the courier's own portal.`
+              {delhiveryBooked
+                ? ` This also cancels the Delhivery booking (${shipmentLeg?.tracking_number}). If Delhivery refuses, the order stays open.`
+                : ' This only marks the order cancelled in our own system — it does not contact the courier.'}
+              {shipmentLeg?.tracking_number && !delhiveryBooked && shipmentLeg.status !== 'cancelled'
+                ? ` This order has a courier booking (${shipmentLeg.tracking_number}${courierName ? ` via ${courierName}` : ''}) — cancel that separately in the courier's own portal.`
                 : ''}
             </DialogDescription>
           </DialogHeader>
