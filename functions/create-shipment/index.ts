@@ -176,6 +176,25 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Delhivery ships from the warehouse named on the chosen pickup location.
+    // With no location chosen, the courier's saved default warehouse is used.
+    let pickupWarehouseName: string | undefined;
+    if (leg.pickup_location_id && isDelhivery) {
+      const { data: pickupLocation, error: pickupError } = await supabase
+        .from('pickup_locations')
+        .select('name, delhivery_warehouse_name')
+        .eq('id', leg.pickup_location_id)
+        .maybeSingle();
+      if (pickupError) throw pickupError;
+      if (!pickupLocation?.delhivery_warehouse_name) {
+        return json({
+          ok: false,
+          error: `Pickup location "${pickupLocation?.name ?? 'unknown'}" has no Delhivery warehouse name. Add one in Settings or pick another location.`,
+        });
+      }
+      pickupWarehouseName = pickupLocation.delhivery_warehouse_name;
+    }
+
     const adapter = await getAdapterForCourier(supabase, courier);
     if (!adapter) {
       return json({ ok: false, error: `No active ${courier.api_environment === 'staging' ? 'staging' : 'production'} API credentials on file for ${courier.name}.` });
@@ -200,6 +219,7 @@ Deno.serve(async (req) => {
       shippingMode: leg.shipping_mode === 'Express' ? 'Express' : 'Surface',
       receiverState: address.state ?? undefined,
       invoiceValue: isDelhivery ? Number(order.total) : undefined,
+      pickupWarehouseName,
     };
 
     // Confirm the courier delivers to this pincode before creating anything.

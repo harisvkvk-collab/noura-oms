@@ -338,6 +338,27 @@ test('pickup: posts the warehouse, date, time and package count and returns the 
   }
 });
 
+test('createShipment: a chosen warehouse is used for the booking', async () => {
+  const m = mockFetch(() => json({ success: true, packages: [{ waybill: '1234567890', status: 'Manifested' }] }));
+  try {
+    await adapter().createShipment({ ...validInput, pickupWarehouseName: 'MOLL WAREHOUSE' });
+    const payload = JSON.parse(decodeURIComponent(String(m.calls[0].init.body).slice('format=json&data='.length)));
+    assert.equal(payload.pickup_location.name, 'MOLL WAREHOUSE');
+  } finally {
+    m.restore();
+  }
+});
+
+test('pickup: a chosen warehouse is sent instead of the courier default', async () => {
+  const m = mockFetch(() => json({ pickup_id: 200 }, 201));
+  try {
+    await adapter().requestPickup!({ pickupDate: '2026-11-02', pickupTime: '14:00:00', packageCount: 1, warehouseName: 'MOLL WAREHOUSE' });
+    assert.equal(JSON.parse(String(m.calls[0].init.body)).pickup_location, 'MOLL WAREHOUSE');
+  } finally {
+    m.restore();
+  }
+});
+
 test('pickup: a malformed date or time is refused before any call', async () => {
   const m = mockFetch(() => json({ pickup_id: 1 }, 201));
   try {

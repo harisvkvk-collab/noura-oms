@@ -28,6 +28,7 @@ export interface CreateShipmentInput {
   codAmount?: number;            // omit / 0 for non-COD orders
   receiverPostalCode?: string;   // required by Delhivery (6-digit Indian pincode)
   shippingMode?: 'Surface' | 'Express'; // Delhivery; defaults to Surface when omitted
+  pickupWarehouseName?: string;  // Delhivery: warehouse to ship from; defaults to the courier's saved warehouse
   receiverState?: string;        // Delhivery
   invoiceValue?: number;         // goods value, Delhivery total_amount
 
@@ -90,6 +91,7 @@ export interface DeliveryAdapter {
     pickupDate: string;
     pickupTime: string;
     packageCount: number;
+    warehouseName?: string;
   }): Promise<{ pickupId: string; detail: string }>;
 
   // Estimated shipping charge for a prepaid parcel. Approximate; the courier

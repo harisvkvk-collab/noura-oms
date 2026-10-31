@@ -16,7 +16,8 @@
 //   Forgetting the "format=json&data=" wrapper is the #1 integration error.
 //   Do not "fix" this into a plain JSON body.
 // - pickup_location must exactly match a warehouse name registered with
-//   Delhivery. Stored in courier_api_credentials.pickup_location.
+//   Delhivery. Stored in courier_api_credentials.pickup_location as the default;
+//   a booking or pickup can name another (pickup_locations.delhivery_warehouse_name).
 // - A prepaid wallet balance (minimum around Rs 500) must be maintained or
 //   shipment creation fails. Not explained in their docs; ask the Delhivery
 //   contact how it works for this account.
@@ -94,8 +95,8 @@ export function normalizeIndianMobile(raw: string): string | null {
 
 // Checked locally before any request is sent, so a bad booking never reaches
 // Delhivery. Returns the first problem found, phrased for the staff member.
-export function validateDelhiveryShipment(input: CreateShipmentInput, pickupLocation: string): string | null {
-  if (!pickupLocation.trim()) return 'Delhivery warehouse name is not set for this environment.';
+export function validateDelhiveryShipment(input: CreateShipmentInput, warehouseName: string): string | null {
+  if (!warehouseName.trim()) return 'Delhivery warehouse name is not set for this pickup location.';
   if (!input.receiverName.trim()) return 'Customer name is required for Delhivery.';
   if (!input.receiverAddress.trim()) return 'Customer address is required for Delhivery.';
   if (!input.receiverCity.trim()) return 'Customer city is required for Delhivery.';
@@ -201,6 +202,7 @@ export class DelhiveryAdapter implements DeliveryAdapter {
     pickupDate: string;
     pickupTime: string;
     packageCount: number;
+    warehouseName?: string;
   }): Promise<{ pickupId: string; detail: string }> {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.pickupDate)) throw new Error('Pickup date must be YYYY-MM-DD.');
     if (!/^\d{2}:\d{2}:\d{2}$/.test(input.pickupTime)) throw new Error('Pickup time must be HH:MM:SS.');
@@ -211,7 +213,7 @@ export class DelhiveryAdapter implements DeliveryAdapter {
       method: 'POST',
       headers: { ...this.authHeader(), Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        pickup_location: this.config.pickupLocation,
+        pickup_location: input.warehouseName || this.config.pickupLocation,
         pickup_date: input.pickupDate,
         pickup_time: input.pickupTime,
         expected_package_count: input.packageCount,
@@ -283,7 +285,8 @@ export class DelhiveryAdapter implements DeliveryAdapter {
   }
 
   async createShipment(input: CreateShipmentInput): Promise<CreateShipmentResult> {
-    const problem = validateDelhiveryShipment(input, this.config.pickupLocation);
+    const warehouse = input.pickupWarehouseName || this.config.pickupLocation;
+    const problem = validateDelhiveryShipment(input, warehouse);
     if (problem) throw new Error(`Delhivery booking not sent: ${problem}`);
 
     const isCod = !!input.codAmount && input.codAmount > 0;
@@ -310,7 +313,7 @@ export class DelhiveryAdapter implements DeliveryAdapter {
           // waybill intentionally omitted: Delhivery auto-generates and returns it
         },
       ],
-      pickup_location: { name: this.config.pickupLocation },
+      pickup_location: { name: warehouse },
     };
 
     // The literal "format=json&data=" wrapper is required; see header note.

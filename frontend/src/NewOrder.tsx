@@ -45,7 +45,7 @@ type Courier = {
   api_environment: 'staging' | 'production';
 };
 type CountryPaymentMethod = { country_code: string; payment_method: string; is_default: boolean };
-type PickupLocation = { id: string; name: string; is_default: boolean };
+type PickupLocation = { id: string; name: string; is_default: boolean; delhivery_warehouse_name: string | null };
 
 type LineItem = {
   key: string;
@@ -99,7 +99,7 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
           .eq('active', true)
           .order('name'),
         supabase.from('country_payment_methods').select('country_code, payment_method, is_default'),
-        supabase.from('pickup_locations').select('id, name, is_default').eq('active', true).order('name'),
+        supabase.from('pickup_locations').select('id, name, is_default, delhivery_warehouse_name').eq('active', true).order('name'),
       ]);
       if (cancelled) return;
       const firstError = [curRes, rateRes, custRes, prodRes, courierRes, cpmRes, pickupRes].find((r) => r.error)?.error;
@@ -136,12 +136,6 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
   const [manualCourierName, setManualCourierName] = useState('');
   const [pickupLocationId, setPickupLocationId] = useState<string | null>(null);
 
-  // Defaults to whichever pickup location has is_default = true once the
-  // list loads — guarded so it only sets it the first time, not every
-  // re-render, in case staff have already changed it.
-  useEffect(() => {
-    setPickupLocationId((prev) => prev ?? pickupLocations.find((p) => p.is_default)?.id ?? null);
-  }, [pickupLocations]);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +180,31 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
   const selectedCourier = couriers.find((c) => c.id === courierId);
   const isGenericCourier = isGenericCourierName(selectedCourier?.name);
 
+  // Delhivery only ships from locations that have a Delhivery warehouse name,
+  // so those are the only ones offered when Delhivery is the courier.
+  const isDelhivery = selectedCourier?.api_provider === 'delhivery';
+  const offeredPickupLocations = useMemo(
+    () => (isDelhivery ? pickupLocations.filter((p) => p.delhivery_warehouse_name) : pickupLocations),
+    [isDelhivery, pickupLocations],
+  );
+
+  // Defaults to whichever pickup location has is_default = true once the
+  // list loads — guarded so it only sets it the first time, not every
+  // re-render, in case staff have already changed it.
+  useEffect(() => {
+    setPickupLocationId((prev) => prev ?? pickupLocations.find((p) => p.is_default)?.id ?? null);
+  }, [pickupLocations]);
+
+  // Switching to Delhivery drops a location it can't use and picks a
+  // Delhivery one instead (the default if it has a name, else the first).
+  useEffect(() => {
+    if (!isDelhivery) return;
+    if (offeredPickupLocations.some((p) => p.id === pickupLocationId)) return;
+    setPickupLocationId(
+      offeredPickupLocations.find((p) => p.is_default)?.id ?? offeredPickupLocations[0]?.id ?? null,
+    );
+  }, [isDelhivery, offeredPickupLocations, pickupLocationId]);
+
   // Estimated Delhivery charge for the customer's default pincode (500 g,
   // prepaid). Information only: the courier's rate applies at booking.
   const [shippingEstimate, setShippingEstimate] = useState<{ amount: number; error?: string } | null>(null);
@@ -208,7 +227,7 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
       try {
         const result = await callEdgeFunction<{ ok: boolean; totalAmount?: number; error?: string }>(
           'estimate-shipping-cost',
-          { courierId, destinationPincode: address.zip_code, shippingMode },
+          { courierId, destinationPincode: address.zip_code, shippingMode, pickupLocationId },
         );
         if (cancelled) return;
         setShippingEstimate(result.ok ? { amount: result.totalAmount ?? 0 } : { amount: 0, error: result.error });
@@ -219,7 +238,7 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
     return () => {
       cancelled = true;
     };
-  }, [courierId, customerId, selectedCourier?.api_provider, shippingMode]);
+  }, [courierId, customerId, selectedCourier?.api_provider, shippingMode, pickupLocationId]);
 
   async function resolveCustomerCountry(id: string) {
     const { data } = await supabase
@@ -777,7 +796,7 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
-                  {pickupLocations.map((p) => (
+                  {offeredPickupLocations.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.name}
                       {p.is_default ? ' (default)' : ''}
@@ -785,6 +804,11 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
                   ))}
                 </SelectContent>
               </Select>
+              {isDelhivery && offeredPickupLocations.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No pickup location has a Delhivery warehouse name yet. Add one in Settings → Pickup locations.
+                </p>
+              )}
             </div>
           )}
 

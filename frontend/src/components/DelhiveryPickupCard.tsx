@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type DelhiveryCourier = { id: string; api_environment: string | null };
+type WarehouseLocation = { id: string; name: string; delhivery_warehouse_name: string | null; is_default: boolean };
 
 // Local calendar date (YYYY-MM-DD) for a day offset from today.
 function localDateISO(offsetDays: number) {
@@ -21,6 +23,8 @@ function localDateISO(offsetDays: number) {
 
 export function DelhiveryPickupCard() {
   const [courier, setCourier] = useState<DelhiveryCourier | null>(null);
+  const [locations, setLocations] = useState<WarehouseLocation[]>([]);
+  const [pickupLocationId, setPickupLocationId] = useState<string | null>(null);
   const [pickupDate, setPickupDate] = useState(localDateISO(1));
   const [pickupTime, setPickupTime] = useState('14:00');
   const [packageCount, setPackageCount] = useState('1');
@@ -30,14 +34,26 @@ export function DelhiveryPickupCard() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from('couriers')
-        .select('id, api_environment')
-        .eq('api_provider', 'delhivery')
-        .eq('active', true)
-        .limit(1)
-        .maybeSingle();
-      if (!cancelled) setCourier(data ?? null);
+      const [{ data: courierRow }, { data: locationRows }] = await Promise.all([
+        supabase
+          .from('couriers')
+          .select('id, api_environment')
+          .eq('api_provider', 'delhivery')
+          .eq('active', true)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('pickup_locations')
+          .select('id, name, delhivery_warehouse_name, is_default')
+          .eq('active', true)
+          .not('delhivery_warehouse_name', 'is', null)
+          .order('name'),
+      ]);
+      if (cancelled) return;
+      const offered = (locationRows ?? []) as WarehouseLocation[];
+      setCourier(courierRow ?? null);
+      setLocations(offered);
+      setPickupLocationId((prev) => prev ?? offered.find((l) => l.is_default)?.id ?? offered[0]?.id ?? null);
     })();
     return () => {
       cancelled = true;
@@ -49,7 +65,7 @@ export function DelhiveryPickupCard() {
   const isStaging = courier.api_environment === 'staging';
 
   async function handleRequestPickup() {
-    if (!courier) return;
+    if (!courier || !pickupLocationId) return;
     setSubmitting(true);
     setMessage(null);
     try {
@@ -57,6 +73,7 @@ export function DelhiveryPickupCard() {
         'request-pickup',
         {
           courierId: courier.id,
+          pickupLocationId,
           pickupDate,
           pickupTime: `${pickupTime}:00`,
           packageCount: Number(packageCount),
@@ -82,7 +99,23 @@ export function DelhiveryPickupCard() {
               : 'Pickup requests are available on Delhivery staging only for now.'}
           </p>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
+          <div className="flex flex-col gap-1.5">
+            <Label>Warehouse</Label>
+            <Select value={pickupLocationId ?? undefined} onValueChange={setPickupLocationId} disabled={locations.length === 0}>
+              <SelectTrigger>
+                <SelectValue placeholder={locations.length === 0 ? 'None set up' : 'Select'} />
+              </SelectTrigger>
+              <SelectContent>
+                {locations.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.name}
+                    {l.is_default ? ' (default)' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="pickup-date">Pickup date</Label>
             <Input id="pickup-date" type="date" value={pickupDate} min={localDateISO(0)} onChange={(e) => setPickupDate(e.target.value)} />
@@ -96,7 +129,7 @@ export function DelhiveryPickupCard() {
             <Input id="pickup-count" type="number" min={1} value={packageCount} onChange={(e) => setPackageCount(e.target.value)} />
           </div>
           <div className="flex flex-col justify-end">
-            <Button onClick={handleRequestPickup} disabled={!isStaging || submitting || !pickupDate || !pickupTime}>
+            <Button onClick={handleRequestPickup} disabled={!isStaging || submitting || !pickupLocationId || !pickupDate || !pickupTime}>
               {submitting ? 'Requesting…' : 'Request pickup'}
             </Button>
           </div>

@@ -27,6 +27,8 @@ type PickupLocation = {
   city: string | null;
   contact_person: string | null;
   contact_phone: string | null;
+  delhivery_warehouse_name: string | null;
+  delhivery_pincode: string | null;
   is_default: boolean;
   active: boolean;
 };
@@ -44,7 +46,7 @@ export function PickupLocations() {
       setLoading(true);
       const { data, error: fetchError } = await supabase
         .from('pickup_locations')
-        .select('id, name, address, city, contact_person, contact_phone, is_default, active')
+        .select('id, name, address, city, contact_person, contact_phone, delhivery_warehouse_name, delhivery_pincode, is_default, active')
         .order('name');
       if (cancelled) return;
       if (fetchError) {
@@ -142,6 +144,8 @@ function PickupLocationDialog({
   const [city, setCity] = useState(location?.city ?? '');
   const [contactPerson, setContactPerson] = useState(location?.contact_person ?? '');
   const [contactPhone, setContactPhone] = useState(location?.contact_phone ?? '');
+  const [delhiveryWarehouseName, setDelhiveryWarehouseName] = useState(location?.delhivery_warehouse_name ?? '');
+  const [delhiveryPincode, setDelhiveryPincode] = useState(location?.delhivery_pincode ?? '');
   const [isDefault, setIsDefault] = useState(location?.is_default ?? false);
   const [active, setActive] = useState(location?.active ?? true);
   const [submitting, setSubmitting] = useState(false);
@@ -152,6 +156,9 @@ function PickupLocationDialog({
     setError(null);
     if (!name.trim()) return setError('Name is required.');
     if (!address.trim()) return setError('Address is required.');
+    if (delhiveryPincode.trim() && !/^\d{6}$/.test(delhiveryPincode.trim())) {
+      return setError('Delhivery pincode must be 6 digits.');
+    }
 
     setSubmitting(true);
     try {
@@ -175,6 +182,8 @@ function PickupLocationDialog({
         city: city.trim() || null,
         contact_person: contactPerson.trim() || null,
         contact_phone: contactPhone.trim() || null,
+        delhivery_warehouse_name: delhiveryWarehouseName.trim() || null,
+        delhivery_pincode: delhiveryPincode.trim() || null,
         is_default: isDefault,
         active,
       };
@@ -223,6 +232,25 @@ function PickupLocationDialog({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="loc-contact-phone">Contact phone</Label>
               <Input id="loc-contact-phone" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-md border p-3">
+            <div>
+              <p className="text-sm font-medium">Delhivery warehouse</p>
+              <p className="text-xs text-muted-foreground">
+                Leave blank if this location doesn't ship with Delhivery. The name must match the warehouse registered in Delhivery exactly.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="loc-delhivery-name">Warehouse name</Label>
+                <Input id="loc-delhivery-name" value={delhiveryWarehouseName} onChange={(e) => setDelhiveryWarehouseName(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="loc-delhivery-pincode">Pincode</Label>
+                <Input id="loc-delhivery-pincode" inputMode="numeric" value={delhiveryPincode} onChange={(e) => setDelhiveryPincode(e.target.value)} />
+              </div>
             </div>
           </div>
 

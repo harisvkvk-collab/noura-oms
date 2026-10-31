@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { courierId, destinationPincode, weightKg, shippingMode } = await req.json();
+    const { courierId, destinationPincode, weightKg, shippingMode, pickupLocationId } = await req.json();
     if (!courierId) return json({ ok: false, error: 'courierId is required.' });
     if (!/^\d{6}$/.test(destinationPincode ?? '')) {
       return json({ ok: false, error: 'A 6-digit destination pincode is required.' });
@@ -52,7 +52,17 @@ Deno.serve(async (req) => {
     }
 
     const credentials = await getCourierCredentials(supabase, courier.name, environment);
-    const originPincode = credentials?.extraConfig?.origin_pincode;
+    // The chosen pickup location's own pincode wins over the courier's default.
+    let originPincode = credentials?.extraConfig?.origin_pincode;
+    if (pickupLocationId) {
+      const { data: pickupLocation, error: pickupError } = await supabase
+        .from('pickup_locations')
+        .select('delhivery_pincode')
+        .eq('id', pickupLocationId)
+        .maybeSingle();
+      if (pickupError) throw pickupError;
+      if (pickupLocation?.delhivery_pincode) originPincode = pickupLocation.delhivery_pincode;
+    }
     if (typeof originPincode !== 'string' || !/^\d{6}$/.test(originPincode)) {
       return json({ ok: false, error: `Set the ${courier.name} warehouse pincode before showing estimates.` });
     }

@@ -21,8 +21,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { courierId, pickupDate, pickupTime, packageCount } = await req.json();
+    const { courierId, pickupLocationId, pickupDate, pickupTime, packageCount } = await req.json();
     if (!courierId) return json({ ok: false, error: 'courierId is required.' });
+    if (!pickupLocationId) return json({ ok: false, error: 'Choose a pickup location first.' });
 
     const { data: courier, error: courierError } = await supabase
       .from('couriers')
@@ -38,6 +39,20 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'Pickup requests are only enabled on the Delhivery staging environment for now.' });
     }
 
+    // The pickup is requested for the warehouse named on the chosen location.
+    const { data: pickupLocation, error: pickupError } = await supabase
+      .from('pickup_locations')
+      .select('name, delhivery_warehouse_name')
+      .eq('id', pickupLocationId)
+      .maybeSingle();
+    if (pickupError) throw pickupError;
+    if (!pickupLocation?.delhivery_warehouse_name) {
+      return json({
+        ok: false,
+        error: `Pickup location "${pickupLocation?.name ?? 'unknown'}" has no Delhivery warehouse name. Add one in Settings first.`,
+      });
+    }
+
     const adapter = await getAdapterForCourier(supabase, { ...courier, api_environment: 'staging' });
     if (!adapter) return json({ ok: false, error: 'No active staging API credentials on file for Delhivery.' });
     if (!adapter.requestPickup) return json({ ok: false, error: `${courier.name} doesn't support pickup requests.` });
@@ -46,6 +61,7 @@ Deno.serve(async (req) => {
       pickupDate: String(pickupDate ?? ''),
       pickupTime: String(pickupTime ?? ''),
       packageCount: Number(packageCount),
+      warehouseName: pickupLocation.delhivery_warehouse_name,
     });
     return json({ ok: true, pickupId: result.pickupId, detail: result.detail });
   } catch (err) {
