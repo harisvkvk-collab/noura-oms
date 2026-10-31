@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import { firstEmbedded } from '@/lib/supabaseRelations';
 import { displayCourierName } from '@/lib/courier';
+import { DelhiveryPickupCard } from './components/DelhiveryPickupCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -203,6 +204,8 @@ export function Deliveries() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-lg font-semibold">Deliveries</h1>
+
+      <DelhiveryPickupCard />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Card>

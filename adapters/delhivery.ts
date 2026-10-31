@@ -194,6 +194,37 @@ export class DelhiveryAdapter implements DeliveryAdapter {
     return { detail: typeof body.remark === 'string' ? body.remark : 'Shipment has been cancelled.' };
   }
 
+  // Pickup request. Not in Delhivery's public docs (those only describe the
+  // dashboard), so this endpoint is tested on staging before any production use.
+  // Date is YYYY-MM-DD and time is HH:MM:SS, as the staging test accepted them.
+  async requestPickup(input: {
+    pickupDate: string;
+    pickupTime: string;
+    packageCount: number;
+  }): Promise<{ pickupId: string; detail: string }> {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.pickupDate)) throw new Error('Pickup date must be YYYY-MM-DD.');
+    if (!/^\d{2}:\d{2}:\d{2}$/.test(input.pickupTime)) throw new Error('Pickup time must be HH:MM:SS.');
+    if (!Number.isInteger(input.packageCount) || input.packageCount < 1) {
+      throw new Error('Package count must be at least 1.');
+    }
+    const res = await fetch(`${this.config.baseUrl}/fm/request/new/`, {
+      method: 'POST',
+      headers: { ...this.authHeader(), Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pickup_location: this.config.pickupLocation,
+        pickup_date: input.pickupDate,
+        pickup_time: input.pickupTime,
+        expected_package_count: input.packageCount,
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as { pickup_id?: unknown } | null;
+    if (!res.ok || body?.pickup_id == null) {
+      throw new Error(`Delhivery pickup request failed: HTTP ${res.status}`);
+    }
+    const pickupId = String(body.pickup_id);
+    return { pickupId, detail: `Pickup ${pickupId} requested for ${input.pickupDate} at ${input.pickupTime}.` };
+  }
+
   // Calculate Shipping Cost (developer portal). Surface, prepaid, delivered
   // status. The API returns a list; the first entry carries total_amount
   // (INR, including tax). Estimates only: Delhivery says rates may change.

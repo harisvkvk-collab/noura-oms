@@ -320,6 +320,60 @@ test('cancel: an HTTP error is an error, not a silent success', async () => {
   }
 });
 
+test('pickup: posts the warehouse, date, time and package count and returns the pickup id', async () => {
+  const m = mockFetch(() => json({ pickup_id: 154536, pickup_location_name: 'WHITEWAY WOOD B2C' }, 201));
+  try {
+    const result = await adapter().requestPickup!({ pickupDate: '2026-11-02', pickupTime: '14:00:00', packageCount: 2 });
+    assert.equal(result.pickupId, '154536');
+    assert.equal(m.calls[0].url, `${BASE}/fm/request/new/`);
+    assert.equal(m.calls[0].init.method, 'POST');
+    assert.deepEqual(JSON.parse(String(m.calls[0].init.body)), {
+      pickup_location: 'Staging Warehouse',
+      pickup_date: '2026-11-02',
+      pickup_time: '14:00:00',
+      expected_package_count: 2,
+    });
+  } finally {
+    m.restore();
+  }
+});
+
+test('pickup: a malformed date or time is refused before any call', async () => {
+  const m = mockFetch(() => json({ pickup_id: 1 }, 201));
+  try {
+    await assert.rejects(adapter().requestPickup!({ pickupDate: '02/11/2026', pickupTime: '14:00:00', packageCount: 1 }), /YYYY-MM-DD/);
+    await assert.rejects(adapter().requestPickup!({ pickupDate: '2026-11-02', pickupTime: '2pm', packageCount: 1 }), /HH:MM:SS/);
+    assert.equal(m.calls.length, 0);
+  } finally {
+    m.restore();
+  }
+});
+
+test('pickup: a count below one is refused before any call', async () => {
+  const m = mockFetch(() => json({ pickup_id: 1 }, 201));
+  try {
+    await assert.rejects(adapter().requestPickup!({ pickupDate: '2026-11-02', pickupTime: '14:00:00', packageCount: 0 }), /at least 1/);
+    assert.equal(m.calls.length, 0);
+  } finally {
+    m.restore();
+  }
+});
+
+test('pickup: an HTTP error or a response without a pickup id is an error', async () => {
+  const m = mockFetch(() => new Response('', { status: 400 }));
+  try {
+    await assert.rejects(adapter().requestPickup!({ pickupDate: '2026-11-02', pickupTime: '14:00:00', packageCount: 1 }), /HTTP 400/);
+  } finally {
+    m.restore();
+  }
+  const m2 = mockFetch(() => json({ detail: 'nope' }, 200));
+  try {
+    await assert.rejects(adapter().requestPickup!({ pickupDate: '2026-11-02', pickupTime: '14:00:00', packageCount: 1 }), /HTTP 200/);
+  } finally {
+    m2.restore();
+  }
+});
+
 test('buildDelhiveryConfig uses the documented default host and requires a warehouse', () => {
   const config = buildDelhiveryConfig({ apiToken: TOKEN, baseUrl: null, pickupLocation: 'WH' }, 'staging');
   assert.equal(config.baseUrl, 'https://staging-express.delhivery.com');

@@ -84,6 +84,14 @@ export interface DeliveryAdapter {
   // Cancels a booked shipment at the courier (only allowed before pickup).
   cancelShipment?(trackingNumber: string): Promise<{ detail: string }>;
 
+  // Asks the courier to collect parcels from the warehouse on a given day.
+  // Pickups are not tied to specific waybills in the request.
+  requestPickup?(input: {
+    pickupDate: string;
+    pickupTime: string;
+    packageCount: number;
+  }): Promise<{ pickupId: string; detail: string }>;
+
   // Estimated shipping charge for a prepaid parcel. Approximate; the courier
   // may change its rates, so it is only shown to staff before booking.
   estimateCost?(input: {
