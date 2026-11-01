@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
     const { data: leg, error: legError } = await supabase
       .from('shipment_legs')
       .select(
-        'id, shipment_id, courier_id, currency_code, pickup_location_id, tracking_number, shipping_mode, couriers(name, api_provider, integration_status, api_environment)',
+        'id, shipment_id, courier_id, currency_code, pickup_location_id, tracking_number, shipping_mode, pickup_date, pickup_time, couriers(name, api_provider, integration_status, api_environment)',
       )
       .eq('id', shipmentLegId)
       .maybeSingle();
@@ -255,7 +255,30 @@ Deno.serve(async (req) => {
     });
     if (timelineError) console.error('create-shipment: timeline write failed', timelineError);
 
-    return json({ ok: true, trackingNumber: result.trackingNumber });
+    // Delhivery: ask for the collection on the pickup date and time chosen on
+    // the order. Staging only for now. A failed pickup request is reported back
+    // as a warning, not as a failed booking, because the parcel is already booked.
+    let pickupWarning: string | undefined;
+    if (isDelhivery && leg.pickup_date && leg.pickup_time) {
+      if (courier.api_environment !== 'staging') {
+        pickupWarning = 'Booked, but no pickup was requested: Delhivery pickups are staging only for now.';
+      } else if (adapter.requestPickup) {
+        try {
+          await adapter.requestPickup({
+            pickupDate: leg.pickup_date,
+            pickupTime: leg.pickup_time,
+            packageCount: 1,
+            warehouseName: pickupWarehouseName,
+          });
+        } catch (pickupErr) {
+          console.error('create-shipment: pickup request failed', pickupErr);
+          const reason = pickupErr instanceof Error ? pickupErr.message : 'unknown error';
+          pickupWarning = `Booked, but the pickup request failed: ${reason}. Request it in the Deliveries page.`;
+        }
+      }
+    }
+
+    return json({ ok: true, trackingNumber: result.trackingNumber, pickupWarning });
   } catch (err) {
     console.error('create-shipment failed', err);
     return json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error.' });

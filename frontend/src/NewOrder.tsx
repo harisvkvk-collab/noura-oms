@@ -45,6 +45,13 @@ type Courier = {
   api_environment: 'staging' | 'production';
 };
 type CountryPaymentMethod = { country_code: string; payment_method: string; is_default: boolean };
+// Local calendar date (YYYY-MM-DD) for a day offset from today.
+function localDateISO(offsetDays: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 type PickupLocation = { id: string; name: string; is_default: boolean; delhivery_warehouse_name: string | null };
 
 type LineItem = {
@@ -209,6 +216,9 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
   // prepaid). Information only: the courier's rate applies at booking.
   const [shippingEstimate, setShippingEstimate] = useState<{ amount: number; error?: string } | null>(null);
   const [shippingMode, setShippingMode] = useState<'Surface' | 'Express'>('Surface');
+  // Delhivery pickup for this order: defaults to tomorrow, 2 pm.
+  const [pickupDate, setPickupDate] = useState(() => localDateISO(1));
+  const [pickupTime, setPickupTime] = useState('14:00');
   useEffect(() => {
     setShippingEstimate(null);
     if (!courierId || !customerId || selectedCourier?.api_provider !== 'delhivery') return;
@@ -444,6 +454,8 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
             cost: deliveryFee,
             manual_courier_name: isGenericCourier ? manualCourierName.trim() || null : null,
             shipping_mode: selectedCourier?.api_provider === 'delhivery' ? shippingMode : 'Surface',
+            pickup_date: isDelhivery ? pickupDate : null,
+            pickup_time: isDelhivery ? `${pickupTime}:00` : null,
             pickup_location_id: pickupLocationId,
             currency_code: currencyCode,
             status: 'pending',
@@ -461,12 +473,14 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
         // number, same as any manual courier, and staff can chase it up by hand.
         if (selectedCourier && isAutoBookingEnabled(selectedCourier)) {
           try {
-            const result = await callEdgeFunction<{ ok: boolean; trackingNumber?: string; error?: string }>(
+            const result = await callEdgeFunction<{ ok: boolean; trackingNumber?: string; error?: string; pickupWarning?: string }>(
               'create-shipment',
               { shipmentLegId: shipmentLeg.id },
             );
             if (!result.ok) {
               shipmentBookingWarning = ` (courier booking failed: ${result.error ?? 'unknown error'} — enter tracking manually later)`;
+            } else if (result.pickupWarning) {
+              shipmentBookingWarning = ` (${result.pickupWarning})`;
             }
           } catch {
             shipmentBookingWarning = ' (courier booking failed — enter tracking manually later)';
@@ -810,6 +824,19 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
                 </p>
               )}
             </div>
+          )}
+
+          {!isInStore && isDelhivery && (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="order-pickup-date">Delhivery pickup date</Label>
+                <Input id="order-pickup-date" type="date" value={pickupDate} min={localDateISO(0)} onChange={(e) => setPickupDate(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="order-pickup-time">Delhivery pickup time</Label>
+                <Input id="order-pickup-time" type="time" value={pickupTime} onChange={(e) => setPickupTime(e.target.value)} />
+              </div>
+            </>
           )}
 
           <div className="flex flex-col gap-1.5 sm:col-start-4">
