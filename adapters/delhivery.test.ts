@@ -277,6 +277,31 @@ test('express: the booking payload and the estimate both use Express', async () 
   }
 });
 
+test('cost estimate: a staging refusal explains the test-pincode limit', async () => {
+  const m = mockFetch(() => new Response(JSON.stringify({ error: 'Unable to process request for provided o_pin' }), { status: 400 }));
+  try {
+    await assert.rejects(
+      adapter().estimateCost!({ originPincode: '679585', destinationPincode: '680005', weightKg: 0.5 }),
+      /Staging only supports a few test pincodes/,
+    );
+  } finally {
+    m.restore();
+  }
+});
+
+test('cost estimate: a production refusal shows Delhivery\'s reason', async () => {
+  const m = mockFetch(() => new Response(JSON.stringify({ error: 'Unable to process request for provided o_pin' }), { status: 400 }));
+  try {
+    const production = new DelhiveryAdapter({ token: TOKEN, baseUrl: 'https://track.delhivery.com', pickupLocation: 'WH' });
+    await assert.rejects(
+      production.estimateCost!({ originPincode: '679585', destinationPincode: '680005', weightKg: 0.5 }),
+      /HTTP 400 .*o_pin/,
+    );
+  } finally {
+    m.restore();
+  }
+});
+
 test('cost estimate: a response without an amount is an error, not a zero charge', async () => {
   const m = mockFetch(() => json({ error: 'Unable to process request for provided o_pin' }));
   try {

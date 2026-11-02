@@ -248,6 +248,13 @@ export class DelhiveryAdapter implements DeliveryAdapter {
       headers: { ...this.authHeader(), Accept: 'application/json' },
     });
     if (!res.ok) {
+      // Staging only accepts a handful of test pincodes, so a refusal there is
+      // expected for most addresses. Say so plainly instead of showing a code.
+      if (res.status === 400 && new URL(this.config.baseUrl).host.startsWith('staging')) {
+        throw new Error(
+          'Staging only supports a few test pincodes, so no estimate is shown here. Production prices are not affected.',
+        );
+      }
       // Delhivery explains the refusal in the body (for example, which pincode
       // it rejected). Pass a short part of it on so staff can see the reason.
       const reason = (await res.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 200);
