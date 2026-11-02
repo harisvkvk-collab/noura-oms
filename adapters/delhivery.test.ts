@@ -277,6 +277,28 @@ test('express: the booking payload and the estimate both use Express', async () 
   }
 });
 
+test('delivery time: returns the number of days from the answer', async () => {
+  const m = mockFetch(() => json({ success: true, data: { tat: 3 } }));
+  try {
+    const result = await adapter().estimateDelivery!({ originPincode: '679585', destinationPincode: '680005', shippingMode: 'Surface' });
+    assert.equal(result.days, 3);
+  } finally {
+    m.restore();
+  }
+});
+
+test('delivery time: a refusal from Delhivery is shown as its message', async () => {
+  const m = mockFetch(() => json({ data: '', msg: 'Origin pin not serviceable.', success: false }));
+  try {
+    await assert.rejects(
+      adapter().estimateDelivery!({ originPincode: '680005', destinationPincode: '680005', shippingMode: 'Express' }),
+      /Origin pin not serviceable/,
+    );
+  } finally {
+    m.restore();
+  }
+});
+
 test('cost estimate: a staging refusal explains the test-pincode limit', async () => {
   const m = mockFetch(() => new Response(JSON.stringify({ error: 'Unable to process request for provided o_pin' }), { status: 400 }));
   try {

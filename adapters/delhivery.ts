@@ -268,6 +268,37 @@ export class DelhiveryAdapter implements DeliveryAdapter {
     return { totalAmount: total, currency: 'INR' };
   }
 
+  // Expected TAT (developer portal). Production answers { data: { tat: <days> } }.
+  async estimateDelivery(input: {
+    originPincode: string;
+    destinationPincode: string;
+    shippingMode: 'Surface' | 'Express';
+  }): Promise<{ days: number }> {
+    const params = new URLSearchParams({
+      origin_pin: input.originPincode,
+      destination_pin: input.destinationPincode,
+      mot: input.shippingMode === 'Express' ? 'E' : 'S',
+      pdt: 'B2C',
+    });
+    const res = await fetch(`${this.config.baseUrl}/api/dc/expected_tat?${params}`, {
+      headers: { ...this.authHeader(), Accept: 'application/json' },
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { success?: unknown; msg?: unknown; data?: { tat?: unknown } }
+      | null;
+    if (!res.ok) {
+      throw new Error(`Delhivery delivery time check failed: HTTP ${res.status}`);
+    }
+    if (body?.success !== true) {
+      throw new Error(typeof body?.msg === 'string' ? body.msg : 'Delhivery could not give a delivery time.');
+    }
+    const days = Number(body.data?.tat);
+    if (!Number.isFinite(days)) {
+      throw new Error('Delhivery delivery time check returned no days.');
+    }
+    return { days };
+  }
+
   // Pincode Serviceability (developer portal). An empty delivery_codes list
   // means the pincode is non-serviceable (NSZ). A remark of "Embargo" is a
   // temporary NSZ. Bookings are prepaid only, so pre_paid must be "Y".

@@ -249,6 +249,39 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
     };
   }, [courierId, customerId, selectedCourier?.api_provider, shippingMode, pickupLocationId]);
 
+  // Expected delivery time (days) for the same customer and shipping mode.
+  // Shown only when Delhivery gives an answer, so staff never see a guess.
+  const [deliveryDays, setDeliveryDays] = useState<number | null>(null);
+  useEffect(() => {
+    setDeliveryDays(null);
+    if (!courierId || !customerId || selectedCourier?.api_provider !== 'delhivery') return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const { data: address } = await supabase
+        .from('customer_addresses')
+        .select('zip_code')
+        .eq('customer_id', customerId)
+        .eq('is_default', true)
+        .maybeSingle();
+      if (!address?.zip_code) return;
+      try {
+        const result = await callEdgeFunction<{ ok: boolean; days?: number }>('estimate-delivery-time', {
+          courierId,
+          destinationPincode: address.zip_code,
+          shippingMode,
+          pickupLocationId,
+        });
+        if (!cancelled && result.ok && typeof result.days === 'number') setDeliveryDays(result.days);
+      } catch {
+        // No delivery time shown; the cost estimate already explains any problem.
+      }
+    }, 600);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [courierId, customerId, selectedCourier?.api_provider, shippingMode, pickupLocationId]);
+
   async function resolveCustomerCountry(id: string) {
     const { data } = await supabase
       .from('customer_addresses')
@@ -783,6 +816,11 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
                   {shippingEstimate.error
                     ? `Delhivery estimate unavailable: ${shippingEstimate.error}`
                     : `Estimated Delhivery charge: ₹${shippingEstimate.amount.toFixed(2)} (0.5 kg, prepaid, ${shippingMode}). Estimate only.`}
+                </p>
+              )}
+              {deliveryDays !== null && (
+                <p className="text-xs text-muted-foreground">
+                  Expected delivery in about {deliveryDays} {deliveryDays === 1 ? 'day' : 'days'} after pickup.
                 </p>
               )}
             </div>

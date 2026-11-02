@@ -102,6 +102,14 @@ export interface DeliveryAdapter {
     weightKg: number;
   }): Promise<{ totalAmount: number; currency: 'INR' }>;
 
+  // Expected transit time between two pincodes, for showing the customer
+  // an approximate delivery window. Estimate only.
+  estimateDelivery?(input: {
+    originPincode: string;
+    destinationPincode: string;
+    shippingMode: 'Surface' | 'Express';
+  }): Promise<{ days: number }>;
+
   // Not every courier exposes a pull-based tracking endpoint (NextDrop relies
   // on webhook push instead) — adapters that don't support this should throw
   // a clear 'NotSupported' error rather than silently returning nothing.
