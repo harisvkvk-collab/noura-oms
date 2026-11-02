@@ -25,6 +25,16 @@ Deno.serve(async (req) => {
     if (!courierId) return json({ ok: false, error: 'courierId is required.' });
     if (!pickupLocationId) return json({ ok: false, error: 'Choose a pickup location first.' });
 
+    // Backstop for the 7-day rule the app already shows. The server clock is UTC
+    // and staff may be elsewhere, so allow a day either side of the window.
+    const dayMs = 24 * 60 * 60 * 1000;
+    const earliestDate = new Date(Date.now() - dayMs).toISOString().slice(0, 10);
+    const latestDate = new Date(Date.now() + 8 * dayMs).toISOString().slice(0, 10);
+    const requestedDate = String(pickupDate ?? '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate) || requestedDate < earliestDate || requestedDate > latestDate) {
+      return json({ ok: false, error: 'Choose a pickup date from today up to 7 days ahead.' });
+    }
+
     const { data: courier, error: courierError } = await supabase
       .from('couriers')
       .select('name, api_provider, api_environment')

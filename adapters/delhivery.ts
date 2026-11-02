@@ -248,7 +248,10 @@ export class DelhiveryAdapter implements DeliveryAdapter {
       headers: { ...this.authHeader(), Accept: 'application/json' },
     });
     if (!res.ok) {
-      throw new Error(`Delhivery cost estimate failed: HTTP ${res.status}`);
+      // Delhivery explains the refusal in the body (for example, which pincode
+      // it rejected). Pass a short part of it on so staff can see the reason.
+      const reason = (await res.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 200);
+      throw new Error(`Delhivery cost estimate failed: HTTP ${res.status}${reason ? ` (${reason})` : ''}`);
     }
     const body = (await res.json().catch(() => null)) as Array<{ total_amount?: unknown }> | null;
     const total = Array.isArray(body) ? Number(body[0]?.total_amount) : NaN;
