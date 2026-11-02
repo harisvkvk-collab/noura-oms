@@ -16,6 +16,7 @@
 //   this sees real concurrent traffic.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { PICKUP_WINDOW_DAYS, localDateISO, pickupDateProblem } from '@/lib/pickupDate';
 import { Plus, X } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { Button } from '@/components/ui/button';
@@ -45,12 +46,6 @@ type Courier = {
   api_environment: 'staging' | 'production';
 };
 type CountryPaymentMethod = { country_code: string; payment_method: string; is_default: boolean };
-// Local calendar date (YYYY-MM-DD) for a day offset from today.
-function localDateISO(offsetDays: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + offsetDays);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 type PickupLocation = { id: string; name: string; is_default: boolean; delhivery_warehouse_name: string | null };
 
@@ -219,11 +214,14 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
   // Delhivery pickup for this order: defaults to tomorrow, 2 pm.
   const [pickupDate, setPickupDate] = useState(() => localDateISO(1));
   const [pickupTime, setPickupTime] = useState('14:00');
+  const pickupProblem = pickupDateProblem(pickupDate);
   useEffect(() => {
     setShippingEstimate(null);
     if (!courierId || !customerId || selectedCourier?.api_provider !== 'delhivery') return;
     let cancelled = false;
-    (async () => {
+    // Wait until the choice settles, so quick changes (Surface → Express → Surface)
+    // don't each send a request to Delhivery, which allows only 50 per 5 minutes.
+    const timer = window.setTimeout(async () => {
       const { data: address } = await supabase
         .from('customer_addresses')
         .select('zip_code')
@@ -244,9 +242,10 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
       } catch {
         if (!cancelled) setShippingEstimate({ amount: 0, error: 'could not load the estimate.' });
       }
-    })();
+    }, 600);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [courierId, customerId, selectedCourier?.api_provider, shippingMode, pickupLocationId]);
 
@@ -341,6 +340,7 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
     if (validItems.length === 0) return setError('Add at least one line item.');
     if (!paymentMethod) return setError('Pick a payment method.');
     if (!isInStore && !courierId) return setError('Pick a courier for shipped orders.');
+    if (!isInStore && isDelhivery && pickupProblem) return setError(pickupProblem);
     if (rate == null) {
       return setError(
         `No exchange rate on file for ${currencyCode} — run scripts/seed-exchange-rates.sql (or add one) before using this currency.`,
@@ -830,7 +830,19 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
             <>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="order-pickup-date">Delhivery pickup date</Label>
-                <Input id="order-pickup-date" type="date" value={pickupDate} min={localDateISO(0)} onChange={(e) => setPickupDate(e.target.value)} />
+                <Input
+                  id="order-pickup-date"
+                  type="date"
+                  value={pickupDate}
+                  min={localDateISO(0)}
+                  max={localDateISO(PICKUP_WINDOW_DAYS)}
+                  onChange={(e) => setPickupDate(e.target.value)}
+                />
+                {pickupProblem ? (
+                  <p className="text-xs text-red-600">{pickupProblem}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Delhivery collects up to {PICKUP_WINDOW_DAYS} days ahead.</p>
+                )}
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="order-pickup-time">Delhivery pickup time</Label>
@@ -854,7 +866,7 @@ export function NewOrder({ staffId, onCreated }: { staffId: string; onCreated?: 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="flex justify-end">
-        <Button type="submit" disabled={submitting}>
+        <Button type="submit" disabled={submitting || (!isInStore && isDelhivery && !!pickupProblem)}>
           {submitting ? 'Saving…' : isInStore ? 'Complete sale' : 'Create order'}
         </Button>
       </div>

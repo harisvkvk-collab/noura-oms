@@ -10,16 +10,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PICKUP_WINDOW_DAYS, localDateISO, pickupDateProblem } from '@/lib/pickupDate';
 
 type DelhiveryCourier = { id: string; api_environment: string | null };
 type WarehouseLocation = { id: string; name: string; delhivery_warehouse_name: string | null; is_default: boolean };
-
-// Local calendar date (YYYY-MM-DD) for a day offset from today.
-function localDateISO(offsetDays: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + offsetDays);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 export function DelhiveryPickupCard() {
   const [courier, setCourier] = useState<DelhiveryCourier | null>(null);
@@ -63,6 +57,7 @@ export function DelhiveryPickupCard() {
   if (!courier) return null;
 
   const isStaging = courier.api_environment === 'staging';
+  const dateProblem = pickupDateProblem(pickupDate);
 
   async function handleRequestPickup() {
     if (!courier || !pickupLocationId) return;
@@ -118,7 +113,15 @@ export function DelhiveryPickupCard() {
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="pickup-date">Pickup date</Label>
-            <Input id="pickup-date" type="date" value={pickupDate} min={localDateISO(0)} onChange={(e) => setPickupDate(e.target.value)} />
+            <Input
+              id="pickup-date"
+              type="date"
+              value={pickupDate}
+              min={localDateISO(0)}
+              max={localDateISO(PICKUP_WINDOW_DAYS)}
+              onChange={(e) => setPickupDate(e.target.value)}
+            />
+            {dateProblem && <p className="text-xs text-red-600">{dateProblem}</p>}
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="pickup-time">Pickup time</Label>
@@ -129,7 +132,7 @@ export function DelhiveryPickupCard() {
             <Input id="pickup-count" type="number" min={1} value={packageCount} onChange={(e) => setPackageCount(e.target.value)} />
           </div>
           <div className="flex flex-col justify-end">
-            <Button onClick={handleRequestPickup} disabled={!isStaging || submitting || !pickupLocationId || !pickupDate || !pickupTime}>
+            <Button onClick={handleRequestPickup} disabled={!isStaging || submitting || !pickupLocationId || !pickupTime || !!dateProblem}>
               {submitting ? 'Requesting…' : 'Request pickup'}
             </Button>
           </div>
