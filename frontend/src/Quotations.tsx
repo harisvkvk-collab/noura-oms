@@ -159,6 +159,9 @@ export function Quotations() {
         currency_code: source.currency_code,
         terms_text: source.terms_text,
         notes: source.notes,
+        // Totals come from the copied items, so the copy shows the right amount.
+        total_qty: (sourceItems ?? []).reduce((sum, i) => sum + i.qty, 0),
+        total_amount: Math.round((sourceItems ?? []).reduce((sum, i) => sum + Number(i.unit_price) * i.qty, 0) * 100) / 100,
       })
       .select('id')
       .single();
