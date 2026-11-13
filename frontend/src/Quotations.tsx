@@ -553,10 +553,11 @@ function QuotationEditor({ quotationId, onBack }: { quotationId: string | null; 
     };
   }
 
-  // Phones get the normal share sheet with the file attached. Desktops, which
-  // cannot share files, get a download instead.
+  // Phones (touch screens) get the normal share sheet with the file attached.
+  // Computers just download the file, which is all that is needed for now.
   async function shareOrDownload(file: File) {
-    if (navigator.canShare?.({ files: [file] })) {
+    const isPhone = window.matchMedia('(pointer: coarse)').matches;
+    if (isPhone && navigator.canShare?.({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: file.name });
       } catch (err) {
