@@ -615,10 +615,10 @@ function QuotationEditor({ quotationId, onBack }: { quotationId: string | null; 
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled={!currentId || sharing} onClick={() => share('pdf')}>
+          <Button variant="outline" size="sm" disabled={sharing} onClick={() => share('pdf')}>
             <Share2 className="size-4" /> PDF
           </Button>
-          <Button variant="outline" size="sm" disabled={!currentId || sharing} onClick={() => share('xlsx')}>
+          <Button variant="outline" size="sm" disabled={sharing} onClick={() => share('xlsx')}>
             <Share2 className="size-4" /> Excel
           </Button>
         </div>
