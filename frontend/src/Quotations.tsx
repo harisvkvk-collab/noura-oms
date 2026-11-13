@@ -10,8 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, ArrowDown, ArrowUp, Copy, Pencil, Plus, Search, Trash2, Camera } from 'lucide-react';
+import { ArrowLeft, ArrowDown, ArrowUp, Copy, Pencil, Plus, Search, Trash2, Camera, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { buildPdf, buildXlsx, quoteFileName, toLoadedImage, type DocItem, type QuoteDoc } from './lib/quotationDocs';
 
 const BUCKET = 'quotation-images';
 const STATUSES = ['draft', 'sent', 'accepted', 'expired', 'cancelled'] as const;
@@ -278,6 +279,8 @@ function QuotationEditor({ quotationId, onBack }: { quotationId: string | null; 
   const [currency, setCurrency] = useState('AED');
   const [terms, setTerms] = useState('');
   const [defaultTerms, setDefaultTerms] = useState('');
+  const [brand, setBrand] = useState({ businessName: '', website: '', footerText: '' });
+  const [sharing, setSharing] = useState(false);
   const [items, setItems] = useState<LineItem[]>([]);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
 
@@ -286,10 +289,15 @@ function QuotationEditor({ quotationId, onBack }: { quotationId: string | null; 
     (async () => {
       const { data: settings } = await supabase
         .from('quotation_settings')
-        .select('default_terms, default_prepared_by, currency_code, validity_days')
+        .select('default_terms, default_prepared_by, currency_code, validity_days, business_name, website, footer_text')
         .eq('id', 1)
         .single();
       if (settings) {
+        setBrand({
+          businessName: settings.business_name ?? '',
+          website: settings.website ?? '',
+          footerText: settings.footer_text ?? '',
+        });
         setDefaultTerms(settings.default_terms ?? '');
         if (!quotationId) {
           setTerms(settings.default_terms ?? '');
@@ -502,18 +510,117 @@ function QuotationEditor({ quotationId, onBack }: { quotationId: string | null; 
     }
   }
 
+  // Builds the PDF/Excel input from what is on screen. Photos are re-loaded
+  // from storage (or used directly when they are product links).
+  async function buildDoc(): Promise<QuoteDoc> {
+    const docItems: DocItem[] = [];
+    for (const item of items.filter((i) => i.description.trim())) {
+      let image: DocItem['image'] = null;
+      if (item.imagePath) {
+        try {
+          const url = item.imagePath.startsWith('http')
+            ? item.imagePath
+            : (await supabase.storage.from(BUCKET).createSignedUrl(item.imagePath, 300)).data?.signedUrl;
+          if (url) image = await toLoadedImage(await (await fetch(url)).blob());
+        } catch {
+          // A photo that cannot be read is left out; the line still prints.
+        }
+      }
+      docItems.push({ description: item.description.trim(), unitPrice: Number(item.unitPrice) || 0, qty: Number(item.qty) || 0, image });
+    }
+    return {
+      businessName: brand.businessName,
+      website: brand.website,
+      footerText: brand.footerText,
+      quoteNumber: quoteNumber ?? 0,
+      quoteDate,
+      validUntil,
+      customerRef,
+      companyName,
+      billToName,
+      addressLines,
+      city,
+      country,
+      phone,
+      preparedBy,
+      preparedByPhone,
+      currency,
+      terms,
+      items: docItems,
+    };
+  }
+
+  // Phones get the normal share sheet with the file attached. Desktops, which
+  // cannot share files, get a download instead.
+  async function shareOrDownload(file: File) {
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: file.name });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return false;
+        throw err;
+      }
+      return true;
+    }
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.name;
+    link.click();
+    URL.revokeObjectURL(url);
+    return true;
+  }
+
+  async function share(kind: 'pdf' | 'xlsx') {
+    if (!currentId || quoteNumber == null) {
+      toast.error('Save the quotation first, so it gets its number.');
+      return;
+    }
+    setSharing(true);
+    try {
+      const doc = await buildDoc();
+      const name = quoteFileName(doc, kind);
+      const file =
+        kind === 'pdf'
+          ? new File([(await buildPdf(doc)) as BlobPart], name, { type: 'application/pdf' })
+          : new File([await buildXlsx(doc)], name, {
+              type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            });
+      const sent = await shareOrDownload(file);
+      if (sent && status === 'draft') {
+        setStatus('sent');
+        await supabase.from('quotations').update({ status: 'sent' }).eq('id', currentId);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not make the file.');
+    } finally {
+      setSharing(false);
+    }
+  }
+
   if (!loaded) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   return (
     <div className="flex flex-col gap-6 pb-24">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="size-4" /> Back
-        </Button>
-        <h1 className="text-xl font-bold tracking-tight">
-          {currentId ? `Quotation ${quoteNumber ?? ''}` : 'New quotation'}
-        </h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            <ArrowLeft className="size-4" /> Back
+          </Button>
+          <h1 className="text-xl font-bold tracking-tight">
+            {currentId ? `Quotation ${quoteNumber ?? ''}` : 'New quotation'}
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" disabled={!currentId || sharing} onClick={() => share('pdf')}>
+            <Share2 className="size-4" /> PDF
+          </Button>
+          <Button variant="outline" size="sm" disabled={!currentId || sharing} onClick={() => share('xlsx')}>
+            <Share2 className="size-4" /> Excel
+          </Button>
+        </div>
       </div>
+      {!currentId && <p className="text-xs text-muted-foreground">Save the quotation to get its number, then share it as PDF or Excel.</p>}
 
       {/* Customer */}
       <Card>
@@ -732,21 +839,11 @@ function PhotoBox({
         {url ? <img src={url} alt="" className="h-full w-full object-contain" /> : <Camera className="size-5 text-muted-foreground" />}
       </div>
       <div className="flex flex-col gap-2">
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-card px-3 py-1.5 text-sm hover:bg-secondary">
-          <Camera className="size-4" />
-          {hasPhoto ? 'Change photo' : 'Add photo'}
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onPick(file);
-              e.target.value = '';
-            }}
-          />
-        </label>
+        <div className="flex flex-wrap gap-2">
+          {/* Two inputs: "capture" opens the camera; the other lets staff pick a saved photo or file. */}
+          <PhotoInput label="Camera" capture onPick={onPick} />
+          <PhotoInput label="Gallery or file" onPick={onPick} />
+        </div>
         {hasPhoto && (
           <button className="self-start text-xs text-red-600" onClick={onRemove}>
             Remove photo
@@ -754,6 +851,26 @@ function PhotoBox({
         )}
       </div>
     </div>
+  );
+}
+
+function PhotoInput({ label, capture, onPick }: { label: string; capture?: boolean; onPick: (file: File) => void }) {
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-card px-3 py-1.5 text-sm hover:bg-secondary">
+      <Camera className="size-4" />
+      {label}
+      <input
+        type="file"
+        accept="image/*"
+        {...(capture ? { capture: 'environment' } : {})}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onPick(file);
+          e.target.value = '';
+        }}
+      />
+    </label>
   );
 }
 
