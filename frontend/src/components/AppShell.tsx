@@ -11,6 +11,7 @@ import {
   Package,
   Truck,
   BarChart3,
+  FileText,
   Settings as SettingsIcon,
   Menu,
   X,
@@ -22,6 +23,7 @@ import { Button } from '@/components/ui/button';
 export type NavKey =
   | 'dashboard'
   | 'orders'
+  | 'quotations'
   | 'customers'
   | 'inventory'
   | 'purchases'
@@ -32,6 +34,7 @@ export type NavKey =
 const NAV_ITEMS: { key: NavKey; label: string; icon: LucideIcon }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
   { key: 'orders', label: 'Orders', icon: ShoppingCart },
+  { key: 'quotations', label: 'Quotations', icon: FileText },
   { key: 'customers', label: 'Customers', icon: Users },
   { key: 'inventory', label: 'Inventory', icon: Shirt },
   { key: 'purchases', label: 'Purchases', icon: Package },

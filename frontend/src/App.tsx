@@ -9,6 +9,7 @@ import { Login } from './Login';
 import { UpdatePassword } from './UpdatePassword';
 import { Dashboard } from './Dashboard';
 import { Orders } from './Orders';
+import { Quotations } from './Quotations';
 import { Inventory } from './Inventory';
 import { Customers } from './Customers';
 import { Purchases } from './Purchases';
@@ -134,6 +135,8 @@ function MainApp({ staffId, staffEmail }: { staffId: string; staffEmail: string 
             return <Dashboard staffId={staffId} />;
           case 'orders':
             return <Orders staffId={staffId} initialProductFilter={preselectProductFilter} />;
+          case 'quotations':
+            return <Quotations />;
           case 'inventory':
             return <Inventory />;
           case 'customers':
