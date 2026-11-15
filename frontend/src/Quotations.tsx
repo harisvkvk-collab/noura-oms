@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, ArrowDown, ArrowUp, Copy, Pencil, Plus, Search, Trash2, Camera, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { buildPdf, buildXlsx, quoteFileName, toLoadedImage, type DocItem, type QuoteDoc } from './lib/quotationDocs';
+import { buildPdf, buildXlsx, formatDisplayDate, quoteFileName, toLoadedImage, type DocItem, type QuoteDoc } from './lib/quotationDocs';
 
 const BUCKET = 'quotation-images';
 const STATUSES = ['draft', 'sent', 'accepted', 'expired', 'cancelled'] as const;
@@ -219,8 +219,8 @@ export function Quotations() {
                 </div>
                 <div className="truncate text-sm">{r.bill_to_name || r.company_name || 'No customer name'}</div>
                 <div className="text-xs text-muted-foreground">
-                  {r.quote_date}
-                  {r.valid_until ? ` · valid until ${r.valid_until}` : ''}
+                  {formatDisplayDate(r.quote_date)}
+                  {r.valid_until ? ` · valid until ${formatDisplayDate(r.valid_until)}` : ''}
                 </div>
               </button>
               <div className="flex flex-col items-end gap-2">
@@ -282,7 +282,7 @@ function QuotationEditor({ quotationId, onBack }: { quotationId: string | null; 
   const [currency, setCurrency] = useState('AED');
   const [terms, setTerms] = useState('');
   const [defaultTerms, setDefaultTerms] = useState('');
-  const [brand, setBrand] = useState({ businessName: '', website: '', footerText: '' });
+  const [brand, setBrand] = useState({ businessName: '', businessAddress: '', businessPhone: '', website: '', footerText: '' });
   const [sharing, setSharing] = useState(false);
   const [items, setItems] = useState<LineItem[]>([]);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
@@ -292,12 +292,14 @@ function QuotationEditor({ quotationId, onBack }: { quotationId: string | null; 
     (async () => {
       const { data: settings } = await supabase
         .from('quotation_settings')
-        .select('default_terms, default_prepared_by, currency_code, validity_days, business_name, website, footer_text')
+        .select('default_terms, default_prepared_by, currency_code, validity_days, business_name, business_address, business_phone, website, footer_text')
         .eq('id', 1)
         .single();
       if (settings) {
         setBrand({
           businessName: settings.business_name ?? '',
+          businessAddress: settings.business_address ?? '',
+          businessPhone: settings.business_phone ?? '',
           website: settings.website ?? '',
           footerText: settings.footer_text ?? '',
         });
@@ -533,6 +535,8 @@ function QuotationEditor({ quotationId, onBack }: { quotationId: string | null; 
     }
     return {
       businessName: brand.businessName,
+      businessAddress: brand.businessAddress,
+      businessPhone: brand.businessPhone,
       website: brand.website,
       footerText: brand.footerText,
       quoteNumber: quoteNumber ?? 0,

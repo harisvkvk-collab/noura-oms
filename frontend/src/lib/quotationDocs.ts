@@ -15,6 +15,8 @@ export type DocItem = {
 
 export type QuoteDoc = {
   businessName: string;
+  businessAddress: string;
+  businessPhone: string;
   website: string;
   footerText: string;
   quoteNumber: number;
@@ -41,6 +43,12 @@ export function quoteFileName(doc: { companyName: string; billToName: string; qu
     .replace(/\s+/g, ' ')
     .trim();
   return `${base}-${doc.quoteNumber}.${extension}`;
+}
+
+// Dates are shown as dd/mm/yyyy. Anything else is printed as it is.
+export function formatDisplayDate(iso: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : iso;
 }
 
 export function formatAmount(n: number) {
@@ -147,10 +155,10 @@ export async function buildPdf(doc: QuoteDoc): Promise<Uint8Array> {
   const rightLabelX = PAGE_W - M - 205;
   const rightValueX = PAGE_W - M - 115;
   const rightRows: [string, string][] = [
-    ['DATE', doc.quoteDate],
+    ['DATE', formatDisplayDate(doc.quoteDate)],
     ['Quotation #', String(doc.quoteNumber)],
     ['Customer ID', doc.customerRef],
-    ['Valid until', doc.validUntil],
+    ['Valid until', formatDisplayDate(doc.validUntil)],
     ['Prepared by', doc.preparedBy],
   ];
   let rightEnd = M + 52;
@@ -168,20 +176,29 @@ export async function buildPdf(doc: QuoteDoc): Promise<Uint8Array> {
     rightEnd += 18;
   }
 
+  // Top left: our own business address. Below it: the customer, under "Bill To".
   let leftEnd = M + 52;
-  if (doc.companyName) {
-    text(doc.companyName, M, leftEnd, 12, bold);
-    leftEnd += 16;
+  for (const line of wrap(doc.businessAddress, font, 10, 260)) {
+    text(line, M, leftEnd, 10, font);
+    leftEnd += 13;
   }
+  if (doc.businessPhone) {
+    text(`Phone : ${doc.businessPhone}`, M, leftEnd, 10, font);
+    leftEnd += 13;
+  }
+  leftEnd += 14;
+  text('Bill To:', M, leftEnd, 10, bold);
+  leftEnd += 14;
+  if (doc.companyName) {
+    text(doc.companyName, M, leftEnd, 10, font);
+    leftEnd += 13;
+  }
+  text(doc.billToName, M, leftEnd, 10, font);
+  leftEnd += 13;
   for (const line of wrap(doc.addressLines, font, 10, 260)) {
     text(line, M, leftEnd, 10, font);
     leftEnd += 13;
   }
-  leftEnd += 8;
-  text('Bill To:', M, leftEnd, 10, bold);
-  leftEnd += 14;
-  text(doc.billToName, M, leftEnd, 10, font);
-  leftEnd += 13;
   const cityCountry = [doc.city, doc.country].filter(Boolean).join(', ');
   if (cityCountry) {
     text(cityCountry, M, leftEnd, 10, font);
@@ -354,10 +371,10 @@ export async function buildXlsx(doc: QuoteDoc): Promise<Blob> {
   ws.getCell('F1').alignment = { horizontal: 'right' };
 
   const right: [string, string | number][] = [
-    ['DATE', doc.quoteDate],
+    ['DATE', formatDisplayDate(doc.quoteDate)],
     ['Quotation #', doc.quoteNumber],
     ['Customer ID', doc.customerRef],
-    ['Valid until', doc.validUntil],
+    ['Valid until', formatDisplayDate(doc.validUntil)],
     ['Prepared by', doc.preparedBy],
   ];
   if (doc.preparedByPhone) right.push(['Phone', doc.preparedByPhone]);
@@ -379,11 +396,14 @@ export async function buildXlsx(doc: QuoteDoc): Promise<Blob> {
     ws.getCell(`A${row}`).font = { bold };
     row++;
   };
-  if (doc.companyName) left(doc.companyName, true);
-  doc.addressLines.split('\n').filter(Boolean).forEach((line) => left(line));
+  // Top left: our business address. Below it: the customer, under "Bill To".
+  doc.businessAddress.split('\n').filter(Boolean).forEach((line) => left(line));
+  if (doc.businessPhone) left(`Phone : ${doc.businessPhone}`);
   row++;
   left('Bill To:', true);
+  if (doc.companyName) left(doc.companyName);
   left(doc.billToName);
+  doc.addressLines.split('\n').filter(Boolean).forEach((line) => left(line));
   const cityCountry = [doc.city, doc.country].filter(Boolean).join(', ');
   if (cityCountry) left(cityCountry);
   if (doc.phone) left(`Phone : ${doc.phone}`);
